@@ -20,7 +20,7 @@ npx wrangler login
 npm run seed:remote
 ```
 
-This uploads `seed/assets/painted-wooden-chair-01/model.glb` and `seed/catalog.json`.
+This uploads everything in `seed/`: the catalog, the chair and the material textures. Re-run it whenever `seed/` gains files.
 
 ## 3. Connect the Pages project
 

@@ -10,6 +10,10 @@ export type Vec3 = [number, number, number];
  */
 export type Wall = { id: string; start: Vec2; end: Vec2; thickness: number; materialId?: string };
 
+/**
+ * A hole through a wall. `offset` runs from the wall's start to the opening's near edge; `sill` is
+ * the height of its bottom edge above the floor, always 0 for a door. See `isOpeningValid` for the limits.
+ */
 export type Opening = {
   id: string;
   wallId: string;

@@ -1,5 +1,7 @@
 import type { Room, Vec2, Wall } from './design';
 import { generateId } from './ids';
+import { materialById, type SurfaceKind } from './materials';
+import { refitOpenings } from './openings';
 
 export const DEFAULT_WALL_THICKNESS = 0.12;
 export const MIN_WALL_LENGTH = 0.05;
@@ -303,13 +305,31 @@ export function removeWall(room: Room, id: string): Room {
 
 export function setWallHeight(room: Room, height: number): Room {
   if (!(height >= MIN_WALL_HEIGHT && height <= MAX_WALL_HEIGHT)) return room;
-  return { ...room, wallHeight: height };
+  return refitOpenings(room, { ...room, wallHeight: height }) ?? room;
+}
+
+const fitsSurface = (materialId: string | undefined, surface: SurfaceKind) => materialId === undefined || materialById(materialId)?.surface === surface;
+
+/** Sets or, with undefined, clears one wall's material. Every other wall is left exactly as it was. */
+export function setWallMaterial(room: Room, id: string, materialId: string | undefined): Room {
+  const wall = room.walls.find((candidate) => candidate.id === id);
+  if (!wall || wall.materialId === materialId || !fitsSurface(materialId, 'wall')) return room;
+  const { materialId: _previous, ...plain } = wall;
+  const next = materialId === undefined ? plain : { ...plain, materialId };
+  return { ...room, walls: room.walls.map((candidate) => (candidate === wall ? next : candidate)) };
+}
+
+/** Sets or, with undefined, clears the floor's material. */
+export function setFloorMaterial(room: Room, materialId: string | undefined): Room {
+  if (room.floorMaterialId === materialId || !fitsSurface(materialId, 'floor')) return room;
+  const { floorMaterialId: _previous, ...plain } = room;
+  return materialId === undefined ? plain : { ...plain, floorMaterialId: materialId };
 }
 
 /**
  * Makes a wall a given length by moving its end corner along the wall. The next wall moves with it,
  * keeping its own length and direction, so a rectangle stays a rectangle. Returns the room unchanged
- * if the result would collapse a wall or break a closed outline.
+ * if the result would collapse a wall, break a closed outline, or leave an opening no longer fitting.
  */
 export function setWallLength(room: Room, id: string, length: number): Room {
   const wall = room.walls.find((candidate) => candidate.id === id);
@@ -330,7 +350,7 @@ export function setWallLength(room: Room, id: string, length: number): Room {
   const walls = room.walls.map((other) => ({ ...other, start: shift(other.start), end: shift(other.end) }));
   if (walls.some((other) => wallLength(other) < MIN_WALL_LENGTH)) return room;
   if (findRoomLoop(room.walls) && !findRoomLoop(walls)) return room;
-  return { ...room, walls };
+  return refitOpenings(room, { ...room, walls }) ?? room;
 }
 
 /** The closest wall to a point, if it lies within `tolerance` of the wall's line segment. */

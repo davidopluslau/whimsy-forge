@@ -83,6 +83,7 @@ type Asset = {
 
 - **Versioning:** every load runs `migrate(doc)` up to the current `schemaVersion`; migrations are pure functions with tests.
 - **Storage layout:** `designs/<id>.json` (latest), `designs/<id>/snapshots/<timestamp>.json` (shared snapshots), `assets/<assetId>/…`, `catalog.json`.
+- **Materials** are tiling PBR textures. A `material` asset's `url` is its color map, with `normalUrl`, `roughnessUrl`, the `surface` it suits, a plain fallback `color`, and the size of one tile in meters as its `dimensions`.
 - **Pictures and rugs** are not models: an image applied to a thin box (frame) or a flat plane, sized from the image's aspect ratio and a typed width.
 
 ## Design considerations

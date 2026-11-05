@@ -51,7 +51,7 @@ export default function EditorPage() {
         <section className="editor__pane editor__pane--plan" aria-label="Floor plan">
           <PlanEditor unit={unit} />
         </section>
-        <section className="editor__pane editor__pane--scene" aria-label="3D view" data-testid="room-scene" data-wall-count={room.walls.length}>
+        <section className="editor__pane editor__pane--scene" aria-label="3D view" data-testid="room-scene" data-wall-count={room.walls.length} data-opening-count={room.openings.length}>
           <RoomScene room={room} />
         </section>
       </div>

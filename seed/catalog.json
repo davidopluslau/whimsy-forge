@@ -7,5 +7,83 @@
     "thumbnailUrl": "",
     "dimensions": [0.43, 0.96, 0.54],
     "license": "CC0 1.0, https://polyhaven.com/a/painted_wooden_chair_01"
+  },
+  {
+    "id": "laminate-floor-02",
+    "name": "Laminate",
+    "kind": "material",
+    "surface": "floor",
+    "url": "assets/laminate-floor-02/color.webp",
+    "normalUrl": "assets/laminate-floor-02/normal.webp",
+    "roughnessUrl": "assets/laminate-floor-02/roughness.webp",
+    "thumbnailUrl": "",
+    "color": "#a98a68",
+    "dimensions": [1.7, 1.7, 0],
+    "license": "CC0 1.0, https://polyhaven.com/a/laminate_floor_02"
+  },
+  {
+    "id": "herringbone-parquet",
+    "name": "Herringbone parquet",
+    "kind": "material",
+    "surface": "floor",
+    "url": "assets/herringbone-parquet/color.webp",
+    "normalUrl": "assets/herringbone-parquet/normal.webp",
+    "roughnessUrl": "assets/herringbone-parquet/roughness.webp",
+    "thumbnailUrl": "",
+    "color": "#8f6a45",
+    "dimensions": [3.4, 3.4, 0],
+    "license": "CC0 1.0, https://polyhaven.com/a/herringbone_parquet"
+  },
+  {
+    "id": "floor-tiles-06",
+    "name": "Floor tiles",
+    "kind": "material",
+    "surface": "floor",
+    "url": "assets/floor-tiles-06/color.webp",
+    "normalUrl": "assets/floor-tiles-06/normal.webp",
+    "roughnessUrl": "assets/floor-tiles-06/roughness.webp",
+    "thumbnailUrl": "",
+    "color": "#b9b4aa",
+    "dimensions": [3, 3, 0],
+    "license": "CC0 1.0, https://polyhaven.com/a/floor_tiles_06"
+  },
+  {
+    "id": "white-plaster-02",
+    "name": "White plaster",
+    "kind": "material",
+    "surface": "wall",
+    "url": "assets/white-plaster-02/color.webp",
+    "normalUrl": "assets/white-plaster-02/normal.webp",
+    "roughnessUrl": "assets/white-plaster-02/roughness.webp",
+    "thumbnailUrl": "",
+    "color": "#e6e2da",
+    "dimensions": [1, 1, 0],
+    "license": "CC0 1.0, https://polyhaven.com/a/white_plaster_02"
+  },
+  {
+    "id": "painted-plaster-wall",
+    "name": "Painted plaster",
+    "kind": "material",
+    "surface": "wall",
+    "url": "assets/painted-plaster-wall/color.webp",
+    "normalUrl": "assets/painted-plaster-wall/normal.webp",
+    "roughnessUrl": "assets/painted-plaster-wall/roughness.webp",
+    "thumbnailUrl": "",
+    "color": "#cfc6b6",
+    "dimensions": [2, 2, 0],
+    "license": "CC0 1.0, https://polyhaven.com/a/painted_plaster_wall"
+  },
+  {
+    "id": "red-brick",
+    "name": "Red brick",
+    "kind": "material",
+    "surface": "wall",
+    "url": "assets/red-brick/color.webp",
+    "normalUrl": "assets/red-brick/normal.webp",
+    "roughnessUrl": "assets/red-brick/roughness.webp",
+    "thumbnailUrl": "",
+    "color": "#8c4f3f",
+    "dimensions": [1.4, 1.4, 0],
+    "license": "CC0 1.0, https://polyhaven.com/a/red_brick"
   }
 ]

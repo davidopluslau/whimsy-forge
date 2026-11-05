@@ -89,7 +89,6 @@ describe('wall dimensions in 3D', () => {
 
   it('walls have the right volume, with outward-facing triangles', () => {
     const thickness = room.walls[0]!.thickness;
-    // The prism has no bottom cap; the sum still holds because y = 0 passes through the origin.
     const expected = (4 + thickness) * thickness * room.wallHeight;
     expect(signedVolume(geometry.walls[0]!.positions)).toBeCloseTo(expected, 4);
   });
