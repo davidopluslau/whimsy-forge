@@ -12,7 +12,7 @@ Status: [M0 — Spike and scaffolding](docs/milestones/M0.md) is built and await
 
 ## Development
 
-Requires Node 22 or newer.
+Requires Node 22.18 or newer, which runs the TypeScript scripts directly.
 
 ```sh
 npm ci
@@ -26,20 +26,26 @@ npx playwright install chromium   # first time only
 | `npm run build` | Type-checks and builds to `dist/` |
 | `npm test` | Unit tests |
 | `npm run test:e2e` | Playwright against a fresh build on the Pages runtime with local R2 |
+| `npm run import-asset -- <file> …` | Imports one model or image into the catalog; see below |
+| `npm run seed:models` | Rebuilds the seed furniture from Poly Haven into `seed/`, without uploading it |
 | `npm run seed:remote` | Uploads `seed/` to the real R2 bucket |
 
 Locally, `/editor` and API writes return 401 because Access isn't configured. The e2e tests sign their own short-lived tokens with a throwaway key.
 
+## Importing an asset
+
+One command imports a model or an image and makes it appear in the catalog panel, with no deploy:
+
+```sh
+npm run import-asset -- ~/Downloads/oak_table.glb --name "Oak table" --category table --license "CC0 1.0" --source https://example.com/oak-table
+```
+
+It normalizes the model to meters with its pivot at bottom center, compresses it (meshopt geometry, WebP textures), renders a thumbnail, writes it to `seed/`, uploads it to R2 and adds it to `seed/catalog.json`. Then commit `seed/`, so the next import starts from this catalog.
+
+A model is assumed to be in meters, as glTF specifies. If it isn't, correct it with `--scale 0.01` or give its real size, such as `--height 0.75`. Models should face +z; `--rotate-y <degrees>` turns one that doesn't. Add `--local` to upload to the local R2 instead, and `--help` for every option.
+
 ## Assets
 
-| Asset | Source | License |
-| --- | --- | --- |
-| Painted Wooden Chair 01 | [Poly Haven](https://polyhaven.com/a/painted_wooden_chair_01) | CC0 1.0 |
-| Laminate Floor 02 | [Poly Haven](https://polyhaven.com/a/laminate_floor_02) | CC0 1.0 |
-| Herringbone Parquet | [Poly Haven](https://polyhaven.com/a/herringbone_parquet) | CC0 1.0 |
-| Floor Tiles 06 | [Poly Haven](https://polyhaven.com/a/floor_tiles_06) | CC0 1.0 |
-| White Plaster 02 | [Poly Haven](https://polyhaven.com/a/white_plaster_02) | CC0 1.0 |
-| Painted Plaster Wall | [Poly Haven](https://polyhaven.com/a/painted_plaster_wall) | CC0 1.0 |
-| Red Brick | [Poly Haven](https://polyhaven.com/a/red_brick) | CC0 1.0 |
+Every asset is CC0 1.0, from [Poly Haven](https://polyhaven.com). `seed/catalog.json` records each one's license and source URL.
 
-The chair was packed to a GLB with `gltf-transform`, with textures converted to 1024 px WebP. The materials are Poly Haven's 1K maps converted to WebP by `scripts/fetch-materials.mjs`. Each asset's license and source are also in `seed/catalog.json`.
+The furniture comes from `scripts/seed-models.ts` and goes through the same pipeline as any import. The materials are Poly Haven's 1K maps converted to WebP by `scripts/fetch-materials.mjs`.

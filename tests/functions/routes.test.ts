@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { onRequestGet as getAsset } from '../../functions/api/assets/[[path]]';
+import { onRequestGet as getCatalog } from '../../functions/api/catalog';
 import { onRequestGet as getDesign, onRequestPut as putDesign } from '../../functions/api/designs/[id]';
 import { call, createEnv } from './helpers';
 
@@ -80,6 +81,32 @@ describe('PUT /api/designs/:id validation', () => {
     expect((await call(putDesign as never, put(big), env, { id: ID })).status).toBe(413);
     const declared = put('{}', ID, { 'Content-Length': String(2 * 1024 * 1024) });
     expect((await call(putDesign as never, declared, env, { id: ID })).status).toBe(413);
+  });
+});
+
+describe('GET /api/catalog', () => {
+  const request = (headers: HeadersInit = {}) => new Request('http://localhost/api/catalog', { headers });
+
+  it('serves the stored catalog as JSON and always revalidates', async () => {
+    const { env, bucket } = createEnv();
+    await bucket.put('catalog.json', new TextEncoder().encode('[{"id":"chair"}]').buffer as ArrayBuffer);
+    const response = await call(getCatalog as never, request(), env, {});
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('application/json');
+    expect(response.headers.get('Cache-Control')).toBe('no-cache');
+    expect(await response.text()).toBe('[{"id":"chair"}]');
+  });
+
+  it('answers 304 when the catalog has not changed', async () => {
+    const { env, bucket } = createEnv();
+    const { httpEtag } = await bucket.put('catalog.json', new ArrayBuffer(2));
+    const response = await call(getCatalog as never, request({ 'If-None-Match': httpEtag }), env, {});
+    expect(response.status).toBe(304);
+  });
+
+  it('answers 404 before the bucket is seeded', async () => {
+    const response = await call(getCatalog as never, request(), createEnv().env, {});
+    expect(response.status).toBe(404);
   });
 });
 

@@ -1,12 +1,328 @@
 [
   {
-    "id": "painted-wooden-chair-01",
-    "name": "Painted Wooden Chair 01",
+    "id": "sofa-02",
+    "name": "Two-seat sofa",
     "kind": "model",
+    "category": "sofa",
+    "tags": [
+      "couch",
+      "settee",
+      "living room"
+    ],
+    "mount": "floor",
+    "url": "assets/sofa-02/model.glb",
+    "thumbnailUrl": "assets/sofa-02/thumbnail.webp",
+    "dimensions": [1.807, 0.71, 0.818],
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/sofa_02"
+  },
+  {
+    "id": "sofa-03",
+    "name": "Large sofa",
+    "kind": "model",
+    "category": "sofa",
+    "tags": [
+      "couch",
+      "living room"
+    ],
+    "mount": "floor",
+    "url": "assets/sofa-03/model.glb",
+    "thumbnailUrl": "assets/sofa-03/thumbnail.webp",
+    "dimensions": [2.731, 1.118, 0.925],
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/sofa_03"
+  },
+  {
+    "id": "painted-wooden-chair-01",
+    "name": "Painted wooden chair",
+    "kind": "model",
+    "category": "chair",
+    "tags": [
+      "dining",
+      "kitchen"
+    ],
+    "mount": "floor",
     "url": "assets/painted-wooden-chair-01/model.glb",
-    "thumbnailUrl": "",
-    "dimensions": [0.43, 0.96, 0.54],
-    "license": "CC0 1.0, https://polyhaven.com/a/painted_wooden_chair_01"
+    "thumbnailUrl": "assets/painted-wooden-chair-01/thumbnail.webp",
+    "dimensions": [0.432, 0.956, 0.54],
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/painted_wooden_chair_01"
+  },
+  {
+    "id": "dining-chair-02",
+    "name": "Dining chair",
+    "kind": "model",
+    "category": "chair",
+    "tags": [
+      "dining",
+      "kitchen"
+    ],
+    "mount": "floor",
+    "url": "assets/dining-chair-02/model.glb",
+    "thumbnailUrl": "assets/dining-chair-02/thumbnail.webp",
+    "dimensions": [0.434, 0.973, 0.576],
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/dining_chair_02"
+  },
+  {
+    "id": "arm-chair-01",
+    "name": "Armchair",
+    "kind": "model",
+    "category": "chair",
+    "tags": [
+      "lounge",
+      "living room"
+    ],
+    "mount": "floor",
+    "url": "assets/arm-chair-01/model.glb",
+    "thumbnailUrl": "assets/arm-chair-01/thumbnail.webp",
+    "dimensions": [0.848, 1.065, 0.766],
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/ArmChair_01"
+  },
+  {
+    "id": "mid-century-lounge-chair",
+    "name": "Mid-century lounge chair",
+    "kind": "model",
+    "category": "chair",
+    "tags": [
+      "armchair",
+      "living room"
+    ],
+    "mount": "floor",
+    "url": "assets/mid-century-lounge-chair/model.glb",
+    "thumbnailUrl": "assets/mid-century-lounge-chair/thumbnail.webp",
+    "dimensions": [1.009, 1.169, 1.19],
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/mid_century_lounge_chair"
+  },
+  {
+    "id": "side-table-01",
+    "name": "Side table",
+    "kind": "model",
+    "category": "table",
+    "tags": [
+      "end table",
+      "nightstand"
+    ],
+    "mount": "floor",
+    "url": "assets/side-table-01/model.glb",
+    "thumbnailUrl": "assets/side-table-01/thumbnail.webp",
+    "dimensions": [0.55, 0.551, 0.45],
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/side_table_01"
+  },
+  {
+    "id": "round-wooden-table-02",
+    "name": "Round wooden table",
+    "kind": "model",
+    "category": "table",
+    "tags": [
+      "dining",
+      "kitchen"
+    ],
+    "mount": "floor",
+    "url": "assets/round-wooden-table-02/model.glb",
+    "thumbnailUrl": "assets/round-wooden-table-02/thumbnail.webp",
+    "dimensions": [0.796, 0.746, 0.796],
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/round_wooden_table_02"
+  },
+  {
+    "id": "dining-table",
+    "name": "Dining table",
+    "kind": "model",
+    "category": "table",
+    "tags": [
+      "kitchen"
+    ],
+    "mount": "floor",
+    "url": "assets/dining-table/model.glb",
+    "thumbnailUrl": "assets/dining-table/thumbnail.webp",
+    "dimensions": [1.955, 0.76, 1.205],
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/dining_table"
+  },
+  {
+    "id": "coffee-table-round-01",
+    "name": "Round coffee table",
+    "kind": "model",
+    "category": "table",
+    "tags": [
+      "living room"
+    ],
+    "mount": "floor",
+    "url": "assets/coffee-table-round-01/model.glb",
+    "thumbnailUrl": "assets/coffee-table-round-01/thumbnail.webp",
+    "dimensions": [1.301, 0.491, 1.301],
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/coffee_table_round_01"
+  },
+  {
+    "id": "gothic-bed-01",
+    "name": "Gothic bed",
+    "kind": "model",
+    "category": "bed",
+    "tags": [
+      "bedroom",
+      "double",
+      "four poster"
+    ],
+    "mount": "floor",
+    "url": "assets/gothic-bed-01/model.glb",
+    "thumbnailUrl": "assets/gothic-bed-01/thumbnail.webp",
+    "dimensions": [1.494, 1.534, 2.04],
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/GothicBed_01"
+  },
+  {
+    "id": "old-bed-frame",
+    "name": "Old bed frame",
+    "kind": "model",
+    "category": "bed",
+    "tags": [
+      "bedroom",
+      "single",
+      "metal"
+    ],
+    "mount": "floor",
+    "url": "assets/old-bed-frame/model.glb",
+    "thumbnailUrl": "assets/old-bed-frame/thumbnail.webp",
+    "dimensions": [0.905, 1.201, 2.002],
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/old_bed_frame"
+  },
+  {
+    "id": "wooden-display-shelves-01",
+    "name": "Wooden display shelves",
+    "kind": "model",
+    "category": "shelf",
+    "tags": [
+      "bookcase",
+      "storage"
+    ],
+    "mount": "floor",
+    "url": "assets/wooden-display-shelves-01/model.glb",
+    "thumbnailUrl": "assets/wooden-display-shelves-01/thumbnail.webp",
+    "dimensions": [1.078, 1.556, 0.371],
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/wooden_display_shelves_01"
+  },
+  {
+    "id": "steel-frame-shelves-02",
+    "name": "Steel-frame shelves",
+    "kind": "model",
+    "category": "shelf",
+    "tags": [
+      "bookcase",
+      "storage",
+      "industrial"
+    ],
+    "mount": "floor",
+    "url": "assets/steel-frame-shelves-02/model.glb",
+    "thumbnailUrl": "assets/steel-frame-shelves-02/thumbnail.webp",
+    "dimensions": [0.593, 2.142, 0.502],
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/steel_frame_shelves_02"
+  },
+  {
+    "id": "desk-lamp-arm-01",
+    "name": "Desk lamp",
+    "kind": "model",
+    "category": "lamp",
+    "tags": [
+      "light",
+      "table lamp",
+      "task"
+    ],
+    "mount": "floor",
+    "url": "assets/desk-lamp-arm-01/model.glb",
+    "thumbnailUrl": "assets/desk-lamp-arm-01/thumbnail.webp",
+    "dimensions": [0.202, 0.893, 0.614],
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/desk_lamp_arm_01"
+  },
+  {
+    "id": "modern-ceiling-lamp-01",
+    "name": "Modern ceiling lamp",
+    "kind": "model",
+    "category": "lamp",
+    "tags": [
+      "light",
+      "pendant"
+    ],
+    "mount": "ceiling",
+    "url": "assets/modern-ceiling-lamp-01/model.glb",
+    "thumbnailUrl": "assets/modern-ceiling-lamp-01/thumbnail.webp",
+    "dimensions": [0.432, 0.952, 0.432],
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/modern_ceiling_lamp_01"
+  },
+  {
+    "id": "industrial-wall-lamp",
+    "name": "Industrial wall lamp",
+    "kind": "model",
+    "category": "lamp",
+    "tags": [
+      "light",
+      "sconce"
+    ],
+    "mount": "wall",
+    "url": "assets/industrial-wall-lamp/model.glb",
+    "thumbnailUrl": "assets/industrial-wall-lamp/thumbnail.webp",
+    "dimensions": [0.273, 0.43, 0.14],
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/industrial_wall_lamp"
+  },
+  {
+    "id": "potted-plant-01",
+    "name": "Tall potted plant",
+    "kind": "model",
+    "category": "plant",
+    "tags": [
+      "green",
+      "houseplant",
+      "floor plant"
+    ],
+    "mount": "floor",
+    "url": "assets/potted-plant-01/model.glb",
+    "thumbnailUrl": "assets/potted-plant-01/thumbnail.webp",
+    "dimensions": [0.587, 1.335, 0.634],
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/potted_plant_01"
+  },
+  {
+    "id": "potted-plant-02",
+    "name": "Potted plant",
+    "kind": "model",
+    "category": "plant",
+    "tags": [
+      "green",
+      "houseplant"
+    ],
+    "mount": "floor",
+    "url": "assets/potted-plant-02/model.glb",
+    "thumbnailUrl": "assets/potted-plant-02/thumbnail.webp",
+    "dimensions": [0.701, 0.841, 0.657],
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/potted_plant_02"
+  },
+  {
+    "id": "potted-plant-04",
+    "name": "Potted succulent",
+    "kind": "model",
+    "category": "plant",
+    "tags": [
+      "green",
+      "houseplant",
+      "small"
+    ],
+    "mount": "floor",
+    "url": "assets/potted-plant-04/model.glb",
+    "thumbnailUrl": "assets/potted-plant-04/thumbnail.webp",
+    "dimensions": [0.168, 0.267, 0.185],
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/potted_plant_04"
   },
   {
     "id": "laminate-floor-02",
@@ -19,7 +335,8 @@
     "thumbnailUrl": "",
     "color": "#a98a68",
     "dimensions": [1.7, 1.7, 0],
-    "license": "CC0 1.0, https://polyhaven.com/a/laminate_floor_02"
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/laminate_floor_02"
   },
   {
     "id": "herringbone-parquet",
@@ -32,7 +349,8 @@
     "thumbnailUrl": "",
     "color": "#8f6a45",
     "dimensions": [3.4, 3.4, 0],
-    "license": "CC0 1.0, https://polyhaven.com/a/herringbone_parquet"
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/herringbone_parquet"
   },
   {
     "id": "floor-tiles-06",
@@ -45,7 +363,8 @@
     "thumbnailUrl": "",
     "color": "#b9b4aa",
     "dimensions": [3, 3, 0],
-    "license": "CC0 1.0, https://polyhaven.com/a/floor_tiles_06"
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/floor_tiles_06"
   },
   {
     "id": "white-plaster-02",
@@ -58,7 +377,8 @@
     "thumbnailUrl": "",
     "color": "#e6e2da",
     "dimensions": [1, 1, 0],
-    "license": "CC0 1.0, https://polyhaven.com/a/white_plaster_02"
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/white_plaster_02"
   },
   {
     "id": "painted-plaster-wall",
@@ -71,7 +391,8 @@
     "thumbnailUrl": "",
     "color": "#cfc6b6",
     "dimensions": [2, 2, 0],
-    "license": "CC0 1.0, https://polyhaven.com/a/painted_plaster_wall"
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/painted_plaster_wall"
   },
   {
     "id": "red-brick",
@@ -84,6 +405,7 @@
     "thumbnailUrl": "",
     "color": "#8c4f3f",
     "dimensions": [1.4, 1.4, 0],
-    "license": "CC0 1.0, https://polyhaven.com/a/red_brick"
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/red_brick"
   }
 ]

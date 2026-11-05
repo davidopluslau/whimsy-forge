@@ -22,7 +22,8 @@ describe('the material catalog', () => {
   });
 
   it.each(MATERIALS.map((material) => [material.id, material] as const))('%s records its license and source, with all its maps present', (_, material) => {
-    expect(material.license).toMatch(/^CC0 1\.0, https:\/\/polyhaven\.com\/a\/\w+$/);
+    expect(material.license).toBe('CC0 1.0');
+    expect(material.sourceUrl).toMatch(/^https:\/\/polyhaven\.com\/a\/\w+$/);
     for (const path of [material.url, material.normalUrl, material.roughnessUrl]) {
       expect(seededFiles).toContain(`../../seed/${path}`);
     }
