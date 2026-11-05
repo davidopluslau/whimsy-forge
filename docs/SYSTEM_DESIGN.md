@@ -1,6 +1,6 @@
 # Whimsy Forge — System Design
 
-**Reflects:** `main` through M3 (Catalog and asset pipeline).
+**Reflects:** `main` through M4 (Placement and editing).
 
 This document describes the system **as built**. For why the project exists, its requirements and its roadmap, see [PLAN.md](PLAN.md). For one milestone's scope, see [milestones/](milestones/). If this document and the code disagree, the code is right and this document has a bug: fix it.
 
@@ -75,6 +75,7 @@ flowchart LR
 | Storage | One R2 bucket, bound as `BUCKET` | `wrangler.toml` |
 | Auth | Cloudflare Access, verified again in Functions | `functions/_lib/access.ts` |
 | Asset tooling | Node scripts with `gltf-transform`, `sharp` and headless Chromium, run by hand and never in Functions | `scripts/`, `seed/` |
+| Photos | Resized and re-encoded to WebP in the browser (Canvas), then uploaded | `src/editor/photo.ts` |
 
 ## Core invariants
 
@@ -82,6 +83,7 @@ Changing any of these is a major decision, and must be recorded here.
 
 - **The Design JSON is the source of truth.** The 3D scene and the plan view are derived from it. Editor-only state (active tool, selection, pan and zoom, display unit, view mode) stays in React component state and is not part of the document.
 - **Units are meters** in all code and stored data. Only `src/model/units.ts` and the UI deal in feet.
+- **Every edit to the design is one undo step,** and undo and redo restore the design exactly. A pointer gesture (including a gizmo drag) is one step: its edits apply at once and are recorded at the end.
 - **`src/model/` holds pure domain logic.** It imports nothing from Three.js, React or Zustand, so it can be tested in Node.
 - **Editing functions are pure and refuse invalid edits.** A function such as `setWallLength(room, …)` returns a new `Room`, or the *same object* if the edit is not allowed. The store relies on that identity check to detect a refusal.
 - **Design and snapshot IDs are unguessable:** 128 random bits as 22 base64url characters (`src/model/ids.ts`).
@@ -95,12 +97,12 @@ Changing any of these is a major decision, and must be recorded here.
 ```mermaid
 flowchart TD
     app["App.tsx<br/>route by pathname, lazy chunks"]
-    editor["editor/<br/>EditorPage, PlanEditor, CatalogPanel, fields"]
+    editor["editor/<br/>EditorPage, PlanEditor, CatalogPanel, PhotoForm, fields"]
     viewer["viewer/<br/>ChairPage"]
-    scene["scene/<br/>RoomScene, roomGeometry, AssetPreview, ChairScene"]
-    store["store/<br/>designStore (Zustand)"]
+    scene["scene/<br/>RoomScene, ItemMesh, ItemGizmo, roomGeometry,<br/>AssetPreview, ChairScene"]
+    store["store/<br/>designStore (Zustand, undo history)"]
     api["api/<br/>fetch client"]
-    model["model/<br/>Design types, room, openings, catalog,<br/>materials, migrate, ids, units"]
+    model["model/<br/>Design types, room, openings, items, catalog,<br/>materials, migrate, ids, units"]
     materials["seed/catalog.json<br/>imported at build time, for materials"]
     scripts["scripts/<br/>import-asset, seed-models"]
     fns["functions/"]
@@ -122,7 +124,7 @@ flowchart TD
 
 Dependencies point one way, toward `model`.
 
-- **`scene/` does not read the store.** `RoomScene` takes a `room` prop, so the read-only viewer can reuse it without any editing code.
+- **`scene/` does not read the store.** `RoomScene` takes `room` and `items` as props, so the read-only viewer can reuse it without any editing code. The editing props (`editing`, selection, gizmo callbacks) are optional and only the editor passes them.
 - **`App.tsx` routes on `window.location.pathname`,** with no router library: `/editor` and `/editor/*` open the editor, and every other path shows the M0 chair page. Unknown paths reach the app because Pages falls back to `index.html`.
 - **Pages are lazy chunks,** which keeps Three.js out of the entry chunk.
 
@@ -130,7 +132,8 @@ Dependencies point one way, toward `model`.
 
 Types are in `src/model/design.ts`, `src/model/catalog.ts` and `src/model/materials.ts`. `PLAN.md` has the original sketch; the code is authoritative.
 
-- **Design:** `schemaVersion` (currently 1), `id`, `name`, `updatedAt`, `room`, `items`, `cameras`. `items` and `cameras` are defined and always empty until M4 and M6.
+- **Design:** `schemaVersion` (currently 1), `id`, `name`, `updatedAt`, `room`, `items`, `cameras`. `cameras` is defined and always empty until M6.
+- **Item:** `id`, `assetId`, `position`, `rotationY`, `size`, `mount` (`floor`, `wall` or `ceiling`), optional `wallId` for a wall item. `position` is the bottom center, and `size` is the footprint in meters, copied at placement so geometry never needs the catalog. `materialOverrides` is defined and not used yet. A photo's `assetId` is `photo:<uploadId>`, and its image is an upload rather than a catalog entry.
 - **Room:** `wallHeight`, `walls`, `openings`, optional `floorMaterialId`.
 - **Wall:** `start` and `end` in plan coordinates, `thickness`, optional `materialId`.
 - **Opening:** belongs to a wall by `wallId`. `offset` runs along the wall from its start to the opening's near edge, and `sill` is the height of its bottom edge above the floor (always 0 for a door).
@@ -146,6 +149,7 @@ Types are in `src/model/design.ts`, `src/model/catalog.ts` and `src/model/materi
 - **The room outline** is found from the walls by `findRoomLoop`: it prunes dead ends, traces the outer boundary, and takes the largest simple polygon. Its edges run counterclockwise. The floor exists only while such an outline does.
 - **A wall on the outline** has `start` and `end` on its room-side face, with thickness extending away from the room, so drawn lengths are inside dimensions. **Any other wall** (a partition or an unfinished run) is centered on its line. See `wallFootprints`.
 - **Texture coordinates are in meters,** and each material's repeat is set from its tile size, so tiles keep their real-world size on any surface.
+- **An item's front faces +z at `rotationY` 0.** Its footprint is its `size` turned by `rotationY` around its `position`. A wall item's back is flush with the wall face nearest where it was placed, and its front points away from the wall (`placeOnWall` in `src/model/items.ts`). Wall items slide along their wall and are re-hung whenever their wall changes; an item whose wall is removed is removed too.
 
 ## Editing and rendering flow
 
@@ -170,7 +174,10 @@ sequenceDiagram
     end
 ```
 
-- **One choke point for room edits.** Every room action in `src/store/designStore.ts` goes through `updateRoom`. `setDesign` replaces the whole document.
+- **One choke point for edits.** Every action in `src/store/designStore.ts` goes through `commit`, which records one undo step, or joins the open gesture. Room edits go through `updateRoom`, which also re-hangs wall items. `setDesign` replaces the whole document and clears the history.
+- **Undo is snapshot-based.** Each step holds the room and items as they were before and after the edit. Undo applies the `before` side and redo the `after` side, so both are exact. The history keeps the latest 200 steps and is cleared by `setDesign`.
+- **Gestures group a drag into one step.** `beginGesture` and `endGesture` bracket a press in the plan and each gizmo drag. Edits in between apply at once, so the view follows the pointer, and only the end of the gesture is recorded.
+- **Items in the scene** are groups named by item id, so the gizmo can find the object it moves. A model is read with `useGLTF`, and a photo's image with `useTexture` from `/api/assets/uploads/`. Until an item's image is known, a box of its size stands in for it. Overlapping floor items get a red footprint; rugs and wall items never count, since rugs sit under things and pictures hang on walls.
 - **Openings follow their walls.** Edits to walls and wall height run `refitOpenings`, which refuses the edit if an opening can no longer fit. Removing a wall removes its openings.
 - **Geometry is cached per wall.** `buildRoomGeometry` runs on every change, including each pointer move while dragging, so walls are keyed on their inputs and only the wall that changed is cut again with CSG. A material isn't an input, so changing one rebuilds nothing.
 - **Rendering is on demand** (`frameloop="demand"`). Anything that changes the picture outside React's props must call `invalidate()`.
@@ -185,7 +192,8 @@ All routes are in `functions/`. Responses are same-origin, so there is no CORS.
 | --- | --- | --- |
 | `GET /api/designs/:id` | Public | The stored bytes with `Cache-Control: no-store` and an `ETag`. 400 for a malformed ID, 404 if absent. |
 | `PUT /api/designs/:id` | Owner, same origin | Stores the received bytes as they are, and returns 204. 400 for bad UTF-8 or JSON, a body `id` that doesn't match the URL, or a missing numeric `schemaVersion`. 413 over 1 MiB. |
-| `GET /api/assets/*` | Public | Objects under the `assets/` prefix only, with a one-day browser cache, `ETag` and 304 support. |
+| `GET /api/assets/*` | Public | Objects under the `assets/` prefix only, with a one-day browser cache, `ETag` and 304 support. Uploaded photos are served here too. |
+| `PUT /api/uploads/:id` | Owner, same origin | Stores one WebP photo at `assets/uploads/<id>.webp` and returns 201 with its `path`. 400 for a malformed ID, 415 unless the type is `image/webp` and the bytes are a WebP file, 413 over 2 MiB, 409 if the ID is taken. It never replaces an existing upload. |
 | `GET /api/catalog` | Public | The bucket's `catalog.json` with `Cache-Control: no-cache`, `ETag` and 304 support, so a new import shows up at once. 404 before the bucket is seeded. |
 | Any other `/api/*` | Same check as above by method | JSON 404 from `functions/api/[[path]].ts`, so it doesn't fall through to `index.html`. |
 
@@ -222,9 +230,12 @@ flowchart TD
 | --- | --- | --- |
 | `designs/<id>.json` | `PUT /api/designs/:id` | `GET /api/designs/:id` |
 | `assets/<assetId>/<file>` | `scripts/import-asset.ts`, `scripts/seed-r2.mjs` | `GET /api/assets/*` |
+| `assets/uploads/<id>.webp` | `PUT /api/uploads/:id` | `GET /api/assets/uploads/<id>.webp` |
 | `catalog.json` | `scripts/import-asset.ts`, `scripts/seed-r2.mjs` | `GET /api/catalog` |
 
 There is no database. D1 is an option in the plan but isn't used.
+
+**Uploads** are the photos behind pictures and rugs. The browser shrinks each to 1600 px on its longest side and re-encodes it as WebP before upload, so the 2 MiB cap is a ceiling. Only items refer to an upload, and nothing deletes one yet.
 
 **Assets** are checked in under `seed/` and uploaded key for key. A model is `assets/<id>/model.glb`, an image `assets/<id>/image.webp`, and either has `assets/<id>/thumbnail.webp`. Materials are Poly Haven 1K maps converted to WebP by `scripts/fetch-materials.mjs`. Asset paths in the catalog are relative to the API root (`assets/…`), and the client prefixes `/api/`.
 
@@ -258,8 +269,8 @@ flowchart LR
 | End to end | Playwright (`e2e/`) | A fresh build on the real Pages runtime (workerd) with local R2. Every seed model is loaded in the browser and measured, and one test runs the real import command |
 
 - **Access in e2e:** `playwright.config.ts` generates a throwaway RSA key each run, and `e2e/access-token.ts` signs short-lived tokens with it, so the real verification path is exercised.
-- **Browsers:** a desktop project runs every spec and a phone project runs the chair spec. Both use software WebGL, so no GPU is needed.
-- **CI** (`.github/workflows/ci.yml`) runs build, unit tests and e2e on pushes to `main` and on pull requests.
+- **Browsers:** a desktop project runs every spec and a phone project runs the chair spec. Both use software WebGL, so no GPU is needed: SwiftShader by default, or the ANGLE backend named by `E2E_ANGLE`.
+- **CI** (`.github/workflows/ci.yml`) runs build, unit tests and e2e on pushes to `main` and on pull requests. Its e2e step installs Mesa and sets `E2E_ANGLE=gl-egl` to render with llvmpipe, because SwiftShader with two workers overloads the runner until tests time out.
 - **Deploys** use Pages' Git integration: `main` goes to production (`whimsy-forge-cze.pages.dev`), and other branches go to Access-restricted previews (`<branch>.whimsy-forge-cze.pages.dev`).
 - **Scripts** are TypeScript run directly by Node 22.18+ with type stripping, and type-checked by `tsconfig.node.json`. `scripts/seed-r2.mjs` uses `wrangler r2 bulk put`, grouped by content type, to keep the e2e server's start within its timeout.
 - **Local development:** see [README.md](../README.md#development). `npm run dev:pages` is the whole stack; `npm run dev` adds hot reload and proxies `/api` to it.
@@ -275,7 +286,10 @@ flowchart LR
 | Replacing an asset at the same key can be stale in browsers for up to a day | Assets rarely change | Use a new asset ID instead of `--replace` |
 | An import from a stale checkout overwrites the bucket's `catalog.json` with that checkout's list | One owner, one machine; `seed/` is committed after each import | Not planned |
 | `seed/` holds finished binaries in git | Small so far, and it lets e2e and `seed:remote` run with no other source | Move out of git if it grows large |
-| At 1280 px wide with the catalog open, the plan's status line truncates (full text in its tooltip) | The header's Catalog button gives the width back | Revisit with M4's panels |
+| At 1280 px wide with the catalog open, the plan's status line truncates (full text in its tooltip) | The header's Catalog button gives the width back | Revisit with the editor's panels |
+| A photo is placed once from its upload; there is no library, so placing it again needs a new upload | Keeps M4 to the placement workflow | Not planned yet |
+| Uploads are never deleted, even when no item uses them any more | Storage is small, and deletion needs a reference check | Not planned yet |
+| Item edits are not saved; the room, items and undo history live in memory | Persistence is a later milestone | M5 |
 
 ## Planned architecture
 
@@ -283,7 +297,6 @@ flowchart LR
 
 | Milestone | Adds | Notes for the implementer |
 | --- | --- | --- |
-| M4 Placement | Items in the store and scene, undo/redo, photo uploads | The catalog is fetched inside `CatalogPanel`; the scene will need it too, and resolving an `assetId` is asynchronous. Assets carry a `mount` default. Undo can wrap `updateRoom` and an equivalent for items, but drags dispatch on every pointer move, so one drag must become one undo step. `setDesign` must not land in the history. See question 1. |
 | M5 Persistence | Autosave, design list, real migrations | See question 2. `Design['schemaVersion']` is a literal type and `migrate` rejects everything else, so both change at the first bump. |
 | M6 Sharing | Snapshots, `/v/<id>` viewer, image export, Open Graph tags | See questions 3 and 4. `RoomScene` can be reused because it takes props. Image export needs a look at `frameloop="demand"` and `preserveDrawingBuffer`. |
 | M7 Polish | HDRI, soft shadows, lamps, phone budget | An HDRI should be self-hosted in R2 to keep scenes free of third-party requests. Budget: textures up to 2048 px, roughly 30 MB per design. |
@@ -292,7 +305,6 @@ flowchart LR
 
 Gaps between [PLAN.md](PLAN.md) and the architecture as built. Remove each one when it is decided, and record the outcome above.
 
-1. **How do photo uploads get in? (M4)** No route writes assets, and Functions can't resize images within 10 ms of CPU. Resizing in the browser before upload fits the limits. A new write route gets the owner-only check from `api/_middleware.ts`, but it still needs size and type limits, and uploads shouldn't be able to replace existing assets.
 2. **How is the design list protected? (M5)** `api/_middleware.ts` makes every `GET` public. A `GET /api/designs` list would hand out every live design's ID, which is a read capability, so it needs its own owner check, which the middleware doesn't currently offer per route. Listing could use R2 `list`, or the plan's optional D1 index.
 3. **What is a snapshot's storage key? (M6)** The plan's `designs/<id>/snapshots/<timestamp>.json` can't be resolved from `/v/<snapshotId>` alone, and timestamps are guessable. Embedding the design ID in the link would expose the live design. A flat key such as `snapshots/<snapshotId>.json` avoids both, but it departs from the plan's layout.
 4. **How do Open Graph tags get served? (M6)** The app is static, and link-preview crawlers don't run JavaScript. `/v/:id` would need a Function that writes per-snapshot tags into `index.html`, and a preview image captured at share time, since the server can't render one.

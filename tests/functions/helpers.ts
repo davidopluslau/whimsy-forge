@@ -17,6 +17,10 @@ export function createFakeBucket() {
       objects.set(key, { bytes: new Uint8Array(value), contentType: httpMetadata?.contentType, etag });
       return { httpEtag: `"${etag}"` };
     },
+    async head(key: string) {
+      const stored = objects.get(key);
+      return stored ? { httpEtag: `"${stored.etag}"` } : null;
+    },
     async get(key: string, options?: { onlyIf?: Headers }) {
       const stored = objects.get(key);
       if (!stored) return null;

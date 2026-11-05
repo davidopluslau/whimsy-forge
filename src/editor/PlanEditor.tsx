@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import type { Opening, Vec2, Wall } from '../model/design';
+import type { Item, Opening, Vec2, Wall } from '../model/design';
+import { footprint as itemFootprint, pointInPolygon } from '../model/items';
 import { createOpening, distanceAlongWall, nearestOpening, openingOutline, wallFaces, wallPoint } from '../model/openings';
 import { findRoomLoop, MAX_WALL_LENGTH, MIN_WALL_LENGTH, nearestWall, samePoint, wallEndpoints, wallFootprints, wallLength, type WallFootprint } from '../model/room';
 import { formatArea, formatLength, parseLength, type LengthUnit } from '../model/units';
 import { useDesignStore } from '../store/designStore';
+import { ASSET_DRAG_TYPE, isAssetDrag } from './drag';
 import { LengthField } from './LengthField';
 import { MaterialSelect } from './MaterialSelect';
 import { GRID_MAJOR_EVERY, GRID_STEP, mergeWithEndpoint, snapPoint, typedTarget } from './snap';
@@ -55,8 +57,21 @@ function gridPath(step: number, width: number, height: number, toScreen: (p: Vec
   return path;
 }
 
-export function PlanEditor({ unit }: { unit: LengthUnit }) {
+type PlanEditorProps = {
+  unit: LengthUnit;
+  items: Item[];
+  /** Ids of floor items that overlap another. */
+  overlapping: ReadonlySet<string>;
+  selectedItemId: string | null;
+  onSelectItem: (id: string | null) => void;
+  /** A catalog asset was dropped on the plan at this point. */
+  onDropAsset: (assetId: string, point: Vec2) => void;
+};
+
+export function PlanEditor({ unit, items, overlapping, selectedItemId, onSelectItem, onDropAsset }: PlanEditorProps) {
   const room = useDesignStore((state) => state.design.room);
+  const beginGesture = useDesignStore((state) => state.beginGesture);
+  const endGesture = useDesignStore((state) => state.endGesture);
   const addWall = useDesignStore((state) => state.addWall);
   const removeWall = useDesignStore((state) => state.removeWall);
   const setWallLength = useDesignStore((state) => state.setWallLength);
@@ -163,18 +178,35 @@ export function PlanEditor({ unit }: { unit: LengthUnit }) {
     endChain();
     setSelectedId(null);
     setSelectedOpeningId(null);
+    onSelectItem(null);
     setTool(next);
   }
 
   function selectWall(id: string | null) {
     setSelectedId(id);
     setSelectedOpeningId(null);
+    if (id) onSelectItem(null);
   }
 
   function selectOpening(id: string) {
     setSelectedOpeningId(id);
     setSelectedId(null);
+    onSelectItem(null);
   }
+
+  /** The item whose footprint is under a point. The one drawn last is on top, so it wins. */
+  function itemAt(point: Vec2): string | null {
+    const hit = [...items].reverse().find((item) => pointInPolygon(point, itemFootprint(item)));
+    return hit?.id ?? null;
+  }
+
+  // Selecting an item clears any wall or opening selected here, so only one thing has its handles up.
+  useEffect(() => {
+    if (selectedItemId) {
+      setSelectedId(null);
+      setSelectedOpeningId(null);
+    }
+  }, [selectedItemId]);
 
   /** The selected opening's resize handle under a point, if any. */
   function handleAt(point: Vec2): 'start' | 'end' | null {
@@ -276,7 +308,7 @@ export function PlanEditor({ unit }: { unit: LengthUnit }) {
     return () => window.removeEventListener('keydown', onKeyDown);
   });
 
-  function pointerPosition(event: ReactPointerEvent) {
+  function pointerPosition(event: { clientX: number; clientY: number }) {
     const rect = svgRef.current!.getBoundingClientRect();
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   }
@@ -284,6 +316,8 @@ export function PlanEditor({ unit }: { unit: LengthUnit }) {
   function handlePointerDown(event: ReactPointerEvent<SVGSVGElement>) {
     const { x, y } = pointerPosition(event);
     event.currentTarget.setPointerCapture(event.pointerId);
+    // Everything from press to release, such as an opening drag, becomes one undo step.
+    beginGesture();
     const drag = tool === 'select' && event.button === 0 ? beginOpeningDrag(toWorld(x, y)) : null;
     gesture.current = {
       x,
@@ -313,11 +347,18 @@ export function PlanEditor({ unit }: { unit: LengthUnit }) {
   function handlePointerUp(event: ReactPointerEvent<SVGSVGElement>) {
     const active = gesture.current;
     gesture.current = null;
+    endGesture();
     if (!active || active.moved || active.drag || active.button !== 0) return;
     const { x, y } = pointerPosition(event);
     const world = toWorld(x, y);
     if (tool === 'select') {
-      selectWall(nearestWall(room.walls, world, SNAP_RADIUS_PX / view.scale)?.id ?? null);
+      const item = itemAt(world);
+      if (item) {
+        selectWall(null);
+        onSelectItem(item);
+      } else {
+        selectWall(nearestWall(room.walls, world, SNAP_RADIUS_PX / view.scale)?.id ?? null);
+      }
     } else if (tool === 'draw') {
       placeCorner(typedPoint ?? snapAt(world).point);
     } else {
@@ -386,6 +427,19 @@ export function PlanEditor({ unit }: { unit: LengthUnit }) {
         onPointerUp={handlePointerUp}
         onPointerCancel={() => {
           gesture.current = null;
+          endGesture();
+        }}
+        onDragOver={(event) => {
+          if (!isAssetDrag(event.dataTransfer.types)) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'copy';
+        }}
+        onDrop={(event) => {
+          const assetId = event.dataTransfer.getData(ASSET_DRAG_TYPE);
+          if (!assetId) return;
+          event.preventDefault();
+          const { x, y } = pointerPosition(event);
+          onDropAsset(assetId, toWorld(x, y));
         }}
       >
         <path className="plan__grid" d={minorGrid} />
@@ -396,6 +450,11 @@ export function PlanEditor({ unit }: { unit: LengthUnit }) {
         {footprints.map((footprint) => (
           <polygon key={footprint.wallId} className={footprint.wallId === selectedId ? 'plan__wall plan__wall--selected' : 'plan__wall'} points={points(footprint.outline)} />
         ))}
+
+        {items.map((item) => {
+          const className = ['plan__item', item.id === selectedItemId && 'plan__item--selected', overlapping.has(item.id) && 'plan__item--overlap'].filter(Boolean).join(' ');
+          return <polygon key={item.id} className={className} data-testid="plan-item" data-item-id={item.id} points={points(itemFootprint(item))} />;
+        })}
 
         {footprints.map((footprint, index) => {
           const wall = room.walls[index]!;

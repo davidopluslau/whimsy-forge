@@ -31,6 +31,23 @@ export type Room = {
   floorMaterialId?: string;
 };
 
+/**
+ * A placed catalog asset or uploaded photo. `position` is the bottom center of the item: x and z on
+ * the floor, y its height above the floor. `size` is the footprint in meters, copied at placement so
+ * geometry never needs the catalog. A floor item's front faces +z at rotationY 0. A wall item's front
+ * faces away from `wallId`, its wall. A photo's `assetId` is `photo:<uploadId>`.
+ */
+export type Item = {
+  id: string;
+  assetId: string;
+  position: Vec3;
+  rotationY: number;
+  size: Vec3;
+  mount: 'floor' | 'wall' | 'ceiling';
+  wallId?: string;
+  materialOverrides?: Record<string, string>;
+};
+
 /** All lengths are meters. */
 export type Design = {
   schemaVersion: 1;
@@ -38,16 +55,7 @@ export type Design = {
   name: string;
   updatedAt: string;
   room: Room;
-  items: {
-    id: string;
-    assetId: string;
-    position: Vec3;
-    rotationY: number;
-    scale: Vec3;
-    mount: 'floor' | 'wall' | 'ceiling';
-    wallId?: string;
-    materialOverrides?: Record<string, string>;
-  }[];
+  items: Item[];
   cameras: { name: string; position: Vec3; target: Vec3 }[];
 };
 
