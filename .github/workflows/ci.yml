@@ -22,4 +22,7 @@ jobs:
       - run: npm run build
       - run: npm test
       - run: npx playwright install --with-deps chromium
+      - run: sudo apt-get install -y libgl1-mesa-dri libegl1 libegl-mesa0
       - run: npm run test:e2e
+        env:
+          E2E_ANGLE: gl-egl
