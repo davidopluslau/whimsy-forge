@@ -15,8 +15,16 @@ if (!process.env.E2E_ACCESS_PRIVATE_JWK) {
   process.env.E2E_ACCESS_AUD = randomUUID();
 }
 
-// Software WebGL so the scene renders on machines without a GPU, such as CI.
-const webgl = { launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] } };
+// Software WebGL so the scene renders on machines without a GPU. SwiftShader is the default because
+// Chromium ships it. CI sets E2E_ANGLE=gl-egl to use Mesa's llvmpipe: with SwiftShader, two workers
+// overload the runner until pages stop responding and tests time out.
+const webgl = {
+  launchOptions: {
+    args: process.env.E2E_ANGLE
+      ? [`--use-angle=${process.env.E2E_ANGLE}`, '--ignore-gpu-blocklist']
+      : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+  },
+};
 
 export default defineConfig({
   testDir: './e2e',
