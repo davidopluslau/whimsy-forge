@@ -1,7 +1,7 @@
 // Uploads everything in seed/ to the R2 bucket, keeping relative paths as object keys.
 // Usage: node scripts/seed-r2.mjs --local|--remote [--persist-to <dir>]
 import { spawnSync } from 'node:child_process';
-import { readdirSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { extname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,6 +15,10 @@ const wrangler = join(root, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
 const args = process.argv.slice(2);
 if (!args.includes('--local') && !args.includes('--remote')) {
   console.error('Pass --local or --remote.');
+  process.exit(1);
+}
+if (!existsSync(wrangler)) {
+  console.error(`Wrangler is not installed in ${root}. Run "npm ci" there, then try again.`);
   process.exit(1);
 }
 
