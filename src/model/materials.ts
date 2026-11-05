@@ -14,6 +14,13 @@ export type MaterialAsset = {
   thumbnailUrl: string;
   /** Shown until the textures load, and if they never do. */
   color: string;
+  /**
+   * Multiplies the roughness map, for one shot much glossier than the surface should read. A value above 1
+   * pushes the map toward fully rough; the shader stops at 1.
+   */
+  roughness?: number;
+  /** Multiplies the color map in linear light, for one shot much darker than the surface it stands for. */
+  tint?: [number, number, number];
   /** Real-world size of one texture tile in meters: [width, height, 0]. */
   dimensions: [number, number, number];
   license: string;

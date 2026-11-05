@@ -37,7 +37,7 @@ export default defineConfig({
   use: { baseURL: `http://localhost:${PORT}`, trace: 'on-first-retry' },
   projects: [
     { name: 'desktop', use: { ...devices['Desktop Chrome'], ...webgl } },
-    { name: 'phone', use: { ...devices['Pixel 7'], ...webgl }, testMatch: /(chair|share)\.spec\.ts/ },
+    { name: 'phone', use: { ...devices['Pixel 7'], ...webgl }, testMatch: /(chair|share|polish|capture-furnished)\.spec\.ts/ },
   ],
   webServer: {
     command: 'node scripts/e2e-server.mjs',

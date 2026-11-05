@@ -7,7 +7,7 @@ import { extname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const BUCKET = 'whimsy-forge';
-const CONTENT_TYPES = { '.glb': 'model/gltf-binary', '.json': 'application/json', '.webp': 'image/webp' };
+const CONTENT_TYPES = { '.glb': 'model/gltf-binary', '.hdr': 'image/vnd.radiance', '.json': 'application/json', '.webp': 'image/webp' };
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const seedDir = join(root, 'seed');

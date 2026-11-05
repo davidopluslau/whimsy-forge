@@ -5,6 +5,8 @@ import { SRGBColorSpace } from 'three';
 import type { Item, Vec3 } from '../model/design';
 import type { ItemImage } from '../model/items';
 import { CAPTURE_HIDDEN } from './capture';
+import { useShadowRefresh } from './lighting';
+import { fitModelToBudget } from './textureBudget';
 
 const PLACEHOLDER_COLOR = '#c9c2b4';
 const FRAME_COLOR = '#3b3026';
@@ -21,10 +23,20 @@ function Placeholder({ size }: { size: Vec3 }) {
   );
 }
 
-function ModelItem({ path }: { path: string }) {
+function ModelItem({ path, maxTexture }: { path: string; maxTexture: number }) {
   const { scene } = useGLTF(`/api/${path}`);
   // useGLTF caches per URL, and one object can only have one parent.
-  const model = useMemo(() => scene.clone(), [scene]);
+  const model = useMemo(() => {
+    const clone = scene.clone();
+    fitModelToBudget(clone, maxTexture);
+    clone.traverse((object) => {
+      object.castShadow = true;
+      object.receiveShadow = true;
+    });
+    return clone;
+  }, [scene, maxTexture]);
+  // A model that has just arrived replaces its placeholder, which casts no shadow.
+  useShadowRefresh([model]);
   return <primitive object={model} />;
 }
 
@@ -36,11 +48,11 @@ function Picture({ path, size }: { path: string; size: Vec3 }) {
   const [width, height, depth] = size;
   return (
     <>
-      <mesh position={[0, height / 2, 0]}>
+      <mesh position={[0, height / 2, 0]} castShadow>
         <boxGeometry args={[width, height, depth]} />
         <meshStandardMaterial color={FRAME_COLOR} roughness={0.6} />
       </mesh>
-      <mesh position={[0, height / 2, depth / 2 + 0.002]}>
+      <mesh position={[0, height / 2, depth / 2 + 0.002]} receiveShadow>
         <planeGeometry args={[width * 0.92, height * 0.92]} />
         <meshStandardMaterial map={texture} roughness={0.8} />
       </mesh>
@@ -60,7 +72,7 @@ function Rug({ path, size }: { path: string; size: Vec3 }) {
         <boxGeometry args={[width, thickness, length]} />
         <meshStandardMaterial color={RUG_BACKING_COLOR} roughness={1} />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, thickness + 0.002, 0]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, thickness + 0.002, 0]} receiveShadow>
         <planeGeometry args={[width, length]} />
         <meshStandardMaterial map={texture} roughness={1} />
       </mesh>
@@ -88,6 +100,8 @@ type ItemMeshProps = {
   item: Item;
   image: ItemImage | null;
   overlapping: boolean;
+  /** The longest side a model's textures may have. */
+  maxModelTexture: number;
   onSelect?: (id: string) => void;
 };
 
@@ -95,12 +109,14 @@ type ItemMeshProps = {
  * One placed item, at its position and turn. The group is named by the item's id, so the gizmo can find it.
  * Its origin is the bottom center, and its front faces +z.
  */
-export function ItemMesh({ item, image, overlapping, onSelect }: ItemMeshProps) {
+export function ItemMesh({ item, image, overlapping, maxModelTexture, onSelect }: ItemMeshProps) {
   const invalidate = useThree((state) => state.invalidate);
   // `image` is a new object on every render, so its fields are the dependencies.
   useEffect(() => invalidate(), [item, image?.kind, image?.path, overlapping, invalidate]);
+  // Also runs when the item goes away, so that its shadow goes too.
+  useShadowRefresh([item.position, item.rotationY, item.size, image?.path]);
 
-  const content = image === null ? <Placeholder size={item.size} /> : image.kind === 'model' ? <ModelItem path={image.path} /> : image.kind === 'picture' ? <Picture path={image.path} size={item.size} /> : <Rug path={image.path} size={item.size} />;
+  const content = image === null ? <Placeholder size={item.size} /> : image.kind === 'model' ? <ModelItem path={image.path} maxTexture={maxModelTexture} /> : image.kind === 'picture' ? <Picture path={image.path} size={item.size} /> : <Rug path={image.path} size={item.size} />;
 
   return (
     <group

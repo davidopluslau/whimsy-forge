@@ -1,20 +1,24 @@
-import { Environment, Lightformer, OrbitControls } from '@react-three/drei';
+import { OrbitControls } from '@react-three/drei';
 import { Canvas, useThree } from '@react-three/fiber';
 import { type MutableRefObject, useEffect, useMemo, useRef, useState } from 'react';
-import { BufferAttribute, BufferGeometry, Plane, Raycaster, RepeatWrapping, SRGBColorSpace, TextureLoader, Vector2, Vector3, type Texture } from 'three';
+import { BufferAttribute, BufferGeometry, NeutralToneMapping, Plane, Raycaster, RepeatWrapping, SRGBColorSpace, TextureLoader, Vector2, Vector3, type Texture } from 'three';
 import type { Item, Room, Vec2 } from '../model/design';
 import { materialById, type MaterialAsset } from '../model/materials';
 import type { CatalogAsset } from '../model/catalog';
-import { itemImage } from '../model/items';
+import { itemImage, lampLights } from '../model/items';
 import { buildRoomGeometry, floorUvs, type RoomGeometry } from './roomGeometry';
 import { CAPTURE_HIDDEN, renderToCanvas, type SceneCapture } from './capture';
 import { type CameraView, FOV, framedView, OVERVIEW_POSITION } from './cameraViews';
 import { ItemGizmo, type GizmoMode, type GizmoPatch } from './ItemGizmo';
 import { ItemMesh } from './ItemMesh';
+import { LampLights, SceneEnvironment, Sun, useShadowRefresh } from './lighting';
+import { FrameWatcher, StatsProbe, type SceneStats } from './performance';
+import { HIGH_QUALITY, type QualityTier } from './quality';
 
 const WALL_COLOR = '#ece6da';
 const FLOOR_COLOR = '#b08d66';
 const BACKGROUND_COLOR = '#d9d4ca';
+const WHITE = [1, 1, 1] as const;
 
 const MAX_ANISOTROPY = 8;
 
@@ -68,9 +72,9 @@ function useMaterialMaps(material: MaterialAsset | undefined): MaterialMaps | nu
   return maps;
 }
 
-type SurfaceProps = { positions: Float32Array; uvs: Float32Array; materialId: string | undefined; plainColor: string };
+type SurfaceProps = { positions: Float32Array; uvs: Float32Array; materialId: string | undefined; plainColor: string; castShadow: boolean };
 
-function Surface({ positions, uvs, materialId, plainColor }: SurfaceProps) {
+function Surface({ positions, uvs, materialId, plainColor, castShadow }: SurfaceProps) {
   const geometry = useMemo(() => {
     const result = new BufferGeometry();
     result.setAttribute('position', new BufferAttribute(positions, 3));
@@ -79,15 +83,16 @@ function Surface({ positions, uvs, materialId, plainColor }: SurfaceProps) {
     return result;
   }, [positions, uvs]);
   useEffect(() => () => geometry.dispose(), [geometry]);
+  useShadowRefresh([geometry]);
 
   const material = materialById(materialId);
   const maps = useMaterialMaps(material);
 
   return (
-    <mesh geometry={geometry}>
+    <mesh geometry={geometry} castShadow={castShadow} receiveShadow>
       {/* Keyed: gaining or losing texture maps needs a new shader, which an in-place prop change would not trigger. */}
       {maps ? (
-        <meshStandardMaterial key={material!.id} {...maps} roughness={1} />
+        <meshStandardMaterial key={material!.id} {...maps} roughness={material!.roughness ?? 1} color={material!.tint ?? WHITE} />
       ) : (
         <meshStandardMaterial key="plain" color={material?.color ?? plainColor} roughness={0.85} />
       )}
@@ -228,39 +233,81 @@ type RoomSceneProps = {
   onOrbitStart?: () => void;
   /** Filled in with a way to save pictures of the scene, once it exists. */
   capture?: MutableRefObject<SceneCapture | null>;
+  /** How much to spend on looks. The editor is on a desktop and stays at the top. */
+  quality?: QualityTier;
+  /** Called when frames stay too slow while the scene moves. Leave it out to keep the quality as it is. */
+  onSlowFrames?: () => void;
+  /** Draws all the time and reports the cost of each frame, for measuring. Normally the scene only draws on change. */
+  onStats?: (stats: SceneStats) => void;
+  /** Says what the scene shows, for anyone who can't see it. */
+  label?: string;
 };
 
+const NO_ASSETS: ReadonlyMap<string, CatalogAsset> = new Map();
+const NOTHING_OVERLAPPING: ReadonlySet<string> = new Set();
+
 /** The 3D view of a room. Everything here is derived from the Design's room and items. */
-export function RoomScene({ room, items = [], catalog = new Map(), overlapping = new Set(), editing, viewRequest, onOrbitStart, capture }: RoomSceneProps) {
+export function RoomScene({
+  room,
+  items = [],
+  catalog = NO_ASSETS,
+  overlapping = NOTHING_OVERLAPPING,
+  editing,
+  viewRequest,
+  onOrbitStart,
+  capture,
+  quality = HIGH_QUALITY,
+  onSlowFrames,
+  onStats,
+  label,
+}: RoomSceneProps) {
   const geometry = useMemo(() => buildRoomGeometry(room), [room]);
   const floorTexCoords = useMemo(() => (geometry.floor ? floorUvs(geometry.floor) : null), [geometry.floor]);
   const selected = editing ? (items.find((item) => item.id === editing.selectedId) ?? null) : null;
+  const lights = useMemo(() => lampLights(items, catalog, quality.maxLamps), [items, catalog, quality.maxLamps]);
+  // A view that keeps gliding after the pointer lets go isn't for everyone.
+  const reducedMotion = useMemo(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches, []);
 
   return (
-    <Canvas frameloop="demand" dpr={[1, 2]} camera={{ position: OVERVIEW_POSITION, fov: FOV }} onPointerMissed={editing ? () => editing.onSelect(null) : undefined}>
+    <Canvas
+      frameloop={onStats ? 'always' : 'demand'}
+      dpr={[1, quality.maxDpr]}
+      shadows="percentage"
+      // Keeps a material's color, where the default filmic curve turns white plaster grey.
+      gl={{ toneMapping: NeutralToneMapping }}
+      camera={{ position: OVERVIEW_POSITION, fov: FOV }}
+      onPointerMissed={editing ? () => editing.onSelect(null) : undefined}
+      onCreated={({ gl }) => {
+        // Shadows are drawn when something changes (see `useShadowRefresh`), not on every frame.
+        gl.shadowMap.autoUpdate = false;
+        gl.shadowMap.needsUpdate = true;
+      }}
+      role={label ? 'img' : undefined}
+      aria-label={label}
+    >
       <color attach="background" args={[BACKGROUND_COLOR]} />
-      <Environment resolution={64} frames={1}>
-        <Lightformer intensity={2.5} position={[0, 4, 0]} rotation={[Math.PI / 2, 0, 0]} scale={8} />
-        <Lightformer intensity={1.5} position={[4, 2, 3]} rotation={[0, -Math.PI / 3, 0]} scale={4} />
-        <Lightformer intensity={0.8} position={[-4, 1.5, -2]} rotation={[0, Math.PI / 2, 0]} scale={4} />
-      </Environment>
-      <directionalLight position={[3, 6, 2]} intensity={1.2} />
+      <SceneEnvironment />
+      <Sun bounds={geometry.bounds} wallHeight={room.wallHeight} shadowMapSize={quality.shadowMapSize} shadowRadius={quality.shadowRadius} />
+      <LampLights lights={lights} />
       {geometry.walls.map((wall, index) => (
-        <Surface key={wall.wallId} positions={wall.positions} uvs={wall.uvs} materialId={room.walls[index]!.materialId} plainColor={WALL_COLOR} />
+        <Surface key={wall.wallId} positions={wall.positions} uvs={wall.uvs} materialId={room.walls[index]!.materialId} plainColor={WALL_COLOR} castShadow />
       ))}
-      {geometry.floor && floorTexCoords && <Surface positions={geometry.floor} uvs={floorTexCoords} materialId={room.floorMaterialId} plainColor={FLOOR_COLOR} />}
+      {geometry.floor && floorTexCoords && <Surface positions={geometry.floor} uvs={floorTexCoords} materialId={room.floorMaterialId} plainColor={FLOOR_COLOR} castShadow={false} />}
       {items.map((item) => (
         <ItemMesh
           key={item.id}
           item={item}
           image={itemImage(item, catalog)}
           overlapping={overlapping.has(item.id)}
+          maxModelTexture={quality.maxModelTexture}
           onSelect={editing ? (id) => editing.onSelect(id) : undefined}
         />
       ))}
-      <OrbitControls makeDefault maxPolarAngle={Math.PI / 2 - 0.02} onStart={onOrbitStart} />
+      <OrbitControls makeDefault maxPolarAngle={Math.PI / 2 - 0.02} enableDamping={!reducedMotion} onStart={onOrbitStart} />
       {viewRequest ? <ApplyView request={viewRequest} /> : <FrameRoom bounds={geometry.bounds} wallHeight={room.wallHeight} />}
       {capture && <CaptureHandle target={capture} bounds={geometry.bounds} wallHeight={room.wallHeight} />}
+      {onSlowFrames && <FrameWatcher tierName={quality.name} onSlow={onSlowFrames} />}
+      {onStats && <StatsProbe onStats={onStats} />}
       {editing && (
         <>
           <group userData={CAPTURE_HIDDEN}>

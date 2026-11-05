@@ -240,7 +240,13 @@
     "thumbnailUrl": "assets/desk-lamp-arm-01/thumbnail.webp",
     "dimensions": [0.202, 0.893, 0.614],
     "license": "CC0 1.0",
-    "sourceUrl": "https://polyhaven.com/a/desk_lamp_arm_01"
+    "sourceUrl": "https://polyhaven.com/a/desk_lamp_arm_01",
+    "light": {
+      "position": [0.013, 0.76, -0.187],
+      "color": "#ffc98f",
+      "intensity": 0.8,
+      "distance": 4
+    }
   },
   {
     "id": "modern-ceiling-lamp-01",
@@ -256,7 +262,13 @@
     "thumbnailUrl": "assets/modern-ceiling-lamp-01/thumbnail.webp",
     "dimensions": [0.432, 0.952, 0.432],
     "license": "CC0 1.0",
-    "sourceUrl": "https://polyhaven.com/a/modern_ceiling_lamp_01"
+    "sourceUrl": "https://polyhaven.com/a/modern_ceiling_lamp_01",
+    "light": {
+      "position": [0, 0.03, 0],
+      "color": "#ffd9ae",
+      "intensity": 2.5,
+      "distance": 7
+    }
   },
   {
     "id": "industrial-wall-lamp",
@@ -272,7 +284,13 @@
     "thumbnailUrl": "assets/industrial-wall-lamp/thumbnail.webp",
     "dimensions": [0.273, 0.43, 0.14],
     "license": "CC0 1.0",
-    "sourceUrl": "https://polyhaven.com/a/industrial_wall_lamp"
+    "sourceUrl": "https://polyhaven.com/a/industrial_wall_lamp",
+    "light": {
+      "position": [0, 0.215, 0.065],
+      "color": "#ffcf9c",
+      "intensity": 1,
+      "distance": 5
+    }
   },
   {
     "id": "potted-plant-01",
@@ -336,7 +354,8 @@
     "color": "#a98a68",
     "dimensions": [1.7, 1.7, 0],
     "license": "CC0 1.0",
-    "sourceUrl": "https://polyhaven.com/a/laminate_floor_02"
+    "sourceUrl": "https://polyhaven.com/a/laminate_floor_02",
+    "roughness": 1.5
   },
   {
     "id": "herringbone-parquet",
@@ -350,7 +369,8 @@
     "color": "#8f6a45",
     "dimensions": [3.4, 3.4, 0],
     "license": "CC0 1.0",
-    "sourceUrl": "https://polyhaven.com/a/herringbone_parquet"
+    "sourceUrl": "https://polyhaven.com/a/herringbone_parquet",
+    "roughness": 6
   },
   {
     "id": "floor-tiles-06",
@@ -364,7 +384,8 @@
     "color": "#b9b4aa",
     "dimensions": [3, 3, 0],
     "license": "CC0 1.0",
-    "sourceUrl": "https://polyhaven.com/a/floor_tiles_06"
+    "sourceUrl": "https://polyhaven.com/a/floor_tiles_06",
+    "roughness": 1.2
   },
   {
     "id": "white-plaster-02",
@@ -378,7 +399,8 @@
     "color": "#e6e2da",
     "dimensions": [1, 1, 0],
     "license": "CC0 1.0",
-    "sourceUrl": "https://polyhaven.com/a/white_plaster_02"
+    "sourceUrl": "https://polyhaven.com/a/white_plaster_02",
+    "tint": [2.3, 2.4, 2.7]
   },
   {
     "id": "painted-plaster-wall",
@@ -392,7 +414,8 @@
     "color": "#cfc6b6",
     "dimensions": [2, 2, 0],
     "license": "CC0 1.0",
-    "sourceUrl": "https://polyhaven.com/a/painted_plaster_wall"
+    "sourceUrl": "https://polyhaven.com/a/painted_plaster_wall",
+    "tint": [1.5, 1.6, 1.65]
   },
   {
     "id": "red-brick",
@@ -407,5 +430,13 @@
     "dimensions": [1.4, 1.4, 0],
     "license": "CC0 1.0",
     "sourceUrl": "https://polyhaven.com/a/red_brick"
+  },
+  {
+    "id": "small-empty-room-3",
+    "name": "Small empty room",
+    "kind": "environment",
+    "url": "assets/small-empty-room-3/environment.hdr",
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/small_empty_room_3"
   }
 ]

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import type { Item, Opening, Vec2, Wall } from '../model/design';
 import { footprint as itemFootprint, pointInPolygon } from '../model/items';
 import { createOpening, distanceAlongWall, nearestOpening, openingOutline, wallFaces, wallPoint } from '../model/openings';
@@ -8,6 +8,7 @@ import { useDesignStore } from '../store/designStore';
 import { ASSET_DRAG_TYPE, isAssetDrag } from './drag';
 import { LengthField } from './LengthField';
 import { MaterialSelect } from './MaterialSelect';
+import { hasCommandModifier, isTextTarget, PLAN_TOOL_KEYS, shortcutsBlocked } from './shortcuts';
 import { frameWalls, GRID_MAJOR_EVERY, GRID_STEP, mergeWithEndpoint, snapPoint, typedTarget } from './snap';
 
 type Tool = 'draw' | 'select' | Opening['kind'];
@@ -64,11 +65,20 @@ type PlanEditorProps = {
   overlapping: ReadonlySet<string>;
   selectedItemId: string | null;
   onSelectItem: (id: string | null) => void;
+  /** What to call an item for anyone who can't see the plan. */
+  itemName: (item: Item) => string;
   /** A catalog asset was dropped on the plan at this point. */
   onDropAsset: (assetId: string, point: Vec2) => void;
 };
 
-export function PlanEditor({ unit, items, overlapping, selectedItemId, onSelectItem, onDropAsset }: PlanEditorProps) {
+/** Enter or Space on a part of the plan that has focus, as a click would. */
+const onActivate = (select: () => void) => (event: ReactKeyboardEvent<SVGElement>) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  select();
+};
+
+export function PlanEditor({ unit, items, overlapping, selectedItemId, onSelectItem, itemName, onDropAsset }: PlanEditorProps) {
   const room = useDesignStore((state) => state.design.room);
   const beginGesture = useDesignStore((state) => state.beginGesture);
   const endGesture = useDesignStore((state) => state.endGesture);
@@ -297,8 +307,11 @@ export function PlanEditor({ unit, items, overlapping, selectedItemId, onSelectI
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const inTypedInput = event.target === typedInputRef.current;
-      if (event.target instanceof HTMLInputElement && !inTypedInput) return;
-      if (event.key === 'Escape') {
+      if (shortcutsBlocked(event.target) && !inTypedInput) return;
+      const nextTool = PLAN_TOOL_KEYS[event.key.toLowerCase() as keyof typeof PLAN_TOOL_KEYS];
+      if (nextTool && !hasCommandModifier(event) && !event.shiftKey && !isTextTarget(event.target)) {
+        chooseTool(nextTool);
+      } else if (event.key === 'Escape') {
         endChain();
         selectWall(null);
         if (tool === 'door' || tool === 'window') setTool('select');
@@ -398,16 +411,16 @@ export function PlanEditor({ unit, items, overlapping, selectedItemId, onSelectI
     <div className="plan" data-testid="plan-editor" data-tool={tool}>
       <div className="plan__bar">
         <div className="segmented" role="group" aria-label="Plan tool">
-          <button type="button" aria-pressed={tool === 'draw'} onClick={() => chooseTool('draw')}>
+          <button type="button" aria-pressed={tool === 'draw'} title="Draw walls (W)" aria-keyshortcuts="W" onClick={() => chooseTool('draw')}>
             Draw walls
           </button>
-          <button type="button" aria-pressed={tool === 'select'} onClick={() => chooseTool('select')}>
+          <button type="button" aria-pressed={tool === 'select'} title="Select (V)" aria-keyshortcuts="V" onClick={() => chooseTool('select')}>
             Select
           </button>
-          <button type="button" aria-label="Add door" aria-pressed={tool === 'door'} onClick={() => chooseTool('door')}>
+          <button type="button" aria-label="Add door" aria-pressed={tool === 'door'} title="Add a door (D)" aria-keyshortcuts="D" onClick={() => chooseTool('door')}>
             + Door
           </button>
-          <button type="button" aria-label="Add window" aria-pressed={tool === 'window'} onClick={() => chooseTool('window')}>
+          <button type="button" aria-label="Add window" aria-pressed={tool === 'window'} title="Add a window (N)" aria-keyshortcuts="N" onClick={() => chooseTool('window')}>
             + Window
           </button>
         </div>
@@ -457,13 +470,45 @@ export function PlanEditor({ unit, items, overlapping, selectedItemId, onSelectI
 
         {loop && <polygon className="plan__floor" points={points(loop.points)} />}
 
-        {footprints.map((footprint) => (
-          <polygon key={footprint.wallId} className={footprint.wallId === selectedId ? 'plan__wall plan__wall--selected' : 'plan__wall'} points={points(footprint.outline)} />
+        {footprints.map((footprint, index) => (
+          <polygon
+            key={footprint.wallId}
+            className={footprint.wallId === selectedId ? 'plan__wall plan__wall--selected' : 'plan__wall'}
+            points={points(footprint.outline)}
+            data-testid="plan-wall"
+            tabIndex={0}
+            role="button"
+            aria-label={`Wall ${index + 1}, ${formatLength(wallLength(room.walls[index]!), unit)}`}
+            aria-pressed={footprint.wallId === selectedId}
+            onKeyDown={onActivate(() => {
+              setTool('select');
+              endChain();
+              selectWall(footprint.wallId);
+            })}
+          />
         ))}
 
         {items.map((item) => {
           const className = ['plan__item', item.id === selectedItemId && 'plan__item--selected', overlapping.has(item.id) && 'plan__item--overlap'].filter(Boolean).join(' ');
-          return <polygon key={item.id} className={className} data-testid="plan-item" data-item-id={item.id} points={points(itemFootprint(item))} />;
+          return (
+            <polygon
+              key={item.id}
+              className={className}
+              data-testid="plan-item"
+              data-item-id={item.id}
+              points={points(itemFootprint(item))}
+              tabIndex={0}
+              role="button"
+              aria-label={itemName(item)}
+              aria-pressed={item.id === selectedItemId}
+              onKeyDown={onActivate(() => {
+                setTool('select');
+                endChain();
+                selectWall(null);
+                onSelectItem(item.id);
+              })}
+            />
+          );
         })}
 
         {footprints.map((footprint, index) => {
@@ -495,6 +540,15 @@ export function PlanEditor({ unit, items, overlapping, selectedItemId, onSelectI
                 data-testid="plan-opening"
                 data-kind={opening.kind}
                 points={points(openingOutline(wall, footprint, opening))}
+                tabIndex={0}
+                role="button"
+                aria-label={`${opening.kind === 'door' ? 'Door' : 'Window'}, ${formatLength(opening.width, unit)} wide`}
+                aria-pressed={isSelected}
+                onKeyDown={onActivate(() => {
+                  setTool('select');
+                  endChain();
+                  selectOpening(opening.id);
+                })}
               />
               <path className="plan__opening-mark" d={openingMark(wall, footprint, opening, view.scale, toScreen)} />
             </g>

@@ -62,6 +62,8 @@ type DesignStore = {
   duplicateItem: (id: string, newId: string) => string | null;
   nudgeItem: (id: string, dx: number, dz: number) => boolean;
   rotateItem: (id: string, angle: number) => boolean;
+  /** Sets how high an item's bottom is above the floor. Returns whether it changed. */
+  setItemHeight: (id: string, height: number) => boolean;
 };
 
 const pick = (design: Design): Document => ({ room: design.room, items: design.items });
@@ -184,5 +186,6 @@ export const useDesignStore = create<DesignStore>((set, get) => {
     },
     nudgeItem: (id, dx, dz) => updateItemWith(id, (item) => items.nudgeItem(get().design.room, item, dx, dz)),
     rotateItem: (id, angle) => updateItemWith(id, (item) => items.rotateItem(item, angle)),
+    setItemHeight: (id, height) => updateItemWith(id, (item) => items.setItemHeight(get().design.room, item, height)),
   };
 });

@@ -58,8 +58,11 @@ async function settled(canvas: Locator): Promise<Buffer> {
 }
 
 async function openViewer(page: Page, id: string) {
-  await page.goto(`/v/${id}`);
+  // Pinned: on a slow test machine the viewer would lower its quality mid-test, which changes the picture.
+  await page.goto(`/v/${id}?quality=medium`);
   await expect(page.getByTestId('snapshot-viewer')).toHaveAttribute('data-catalog', 'ready');
+  // The HDRI arrives after the scene first draws, and changes how everything looks.
+  await page.waitForLoadState('networkidle');
   return page.locator('canvas');
 }
 

@@ -1,6 +1,6 @@
 # Whimsy Forge — System Design
 
-**Reflects:** `main` through M6 (Sharing).
+**Reflects:** `main` through M7 (Polish).
 
 This document describes the system **as built**. For why the project exists, its requirements and its roadmap, see [PLAN.md](PLAN.md). For one milestone's scope, see [milestones/](milestones/). If this document and the code disagree, the code is right and this document has a bug: fix it.
 
@@ -82,6 +82,7 @@ flowchart LR
 | Storage | One R2 bucket, bound as `BUCKET` | `wrangler.toml` |
 | Auth | Cloudflare Access, verified again in Functions | `functions/_lib/access.ts` |
 | Asset tooling | Node scripts with `gltf-transform`, `sharp` and headless Chromium, run by hand and never in Functions | `scripts/`, `seed/` |
+| Lighting | One self-hosted CC0 HDRI, a shadow-casting sun, and lamps from the catalog | `src/scene/lighting.tsx` |
 | Photos | Resized and re-encoded to WebP in the browser (Canvas), then uploaded | `src/editor/photo.ts` |
 
 ## Core invariants
@@ -107,12 +108,12 @@ Changing any of these is a major decision, and must be recorded here.
 ```mermaid
 flowchart TD
     app["App.tsx<br/>route by pathname, lazy chunks"]
-    editor["editor/<br/>DesignListPage, EditorRoute, EditorPage, PlanEditor,<br/>SaveIndicator, ShareControls, CatalogPanel, PhotoForm, fields"]
+    editor["editor/<br/>DesignListPage, EditorRoute, EditorPage, PlanEditor,<br/>SaveIndicator, ShareControls, CatalogPanel, PhotoForm, fields,<br/>shortcuts, ShortcutsDialog"]
     viewer["viewer/<br/>SnapshotPage, ChairPage"]
-    scene["scene/<br/>RoomScene, ItemMesh, ItemGizmo, roomGeometry,<br/>cameraViews, capture, AssetPreview, ChairScene"]
+    scene["scene/<br/>RoomScene, ItemMesh, ItemGizmo, roomGeometry, lighting,<br/>quality, performance, textureBudget,<br/>cameraViews, capture, AssetPreview, ChairScene"]
     store["store/<br/>designStore (Zustand, undo history),<br/>autosave, drafts"]
     api["api/<br/>fetch client"]
-    model["model/<br/>Design types, room, openings, items, catalog,<br/>materials, migrate, ids, units"]
+    model["model/<br/>Design types, room, openings, items, catalog,<br/>materials, environment, migrate, ids, units"]
     materials["seed/catalog.json<br/>imported at build time, for materials"]
     scripts["scripts/<br/>import-asset, seed-models"]
     fns["functions/"]
@@ -136,7 +137,7 @@ flowchart TD
 
 Dependencies point one way, toward `model`.
 
-- **`scene/` does not read the store.** `RoomScene` takes `room` and `items` as props, so the read-only viewer can reuse it without any editing code. The editing props (`editing`, selection, gizmo callbacks) are optional and only the editor passes them. The viewer has its own: `viewRequest`, `onOrbitStart` and `capture`.
+- **`scene/` does not read the store.** `RoomScene` takes `room` and `items` as props, so the read-only viewer can reuse it without any editing code. The editing props (`editing`, selection, gizmo callbacks) are optional and only the editor passes them. The viewer has its own: `viewRequest`, `onOrbitStart`, `capture`, `onSlowFrames`, `onStats` and `label`.
 - **The viewer has no store and no editing code.** `SnapshotPage` holds its design in component state and never writes.
 - **`App.tsx` routes on `window.location.pathname`,** with no router library: `/v/<id>` is the read-only viewer, `/editor` is the design list, `/editor/new` creates a design and replaces itself in the address bar with `/editor/<id>`, `/editor/<id>` opens one, and every other path shows the M0 chair page. Moving between the list and the editor is a full page load. Unknown paths reach the app because Pages falls back to `index.html`.
 - **Pages are lazy chunks,** which keeps Three.js out of the entry chunk and out of the design list.
@@ -144,16 +145,17 @@ Dependencies point one way, toward `model`.
 
 ## Data model
 
-Types are in `src/model/design.ts`, `src/model/catalog.ts` and `src/model/materials.ts`. `PLAN.md` has the original sketch; the code is authoritative.
+Types are in `src/model/design.ts`, `src/model/catalog.ts`, `src/model/materials.ts` and `src/model/environment.ts`. `PLAN.md` has the original sketch; the code is authoritative.
 
 - **Design:** `schemaVersion` (currently 1, from `CURRENT_SCHEMA_VERSION`), `id`, `name`, `updatedAt`, `room`, `items`, `cameras`. `cameras` stays empty on a live design. On a snapshot it holds the view the owner shared from, unless the 3D pane was hidden, and it needed no schema change. The other camera presets are worked out from the room (`src/scene/cameraViews.ts`), not stored.
-- **Item:** `id`, `assetId`, `position`, `rotationY`, `size`, `mount` (`floor`, `wall` or `ceiling`), optional `wallId` for a wall item. `position` is the bottom center, and `size` is the footprint in meters, copied at placement so geometry never needs the catalog. `materialOverrides` is defined and not used yet. A photo's `assetId` is `photo:<uploadId>`, and its image is an upload rather than a catalog entry.
+- **Item:** `id`, `assetId`, `position`, `rotationY`, `size`, `mount` (`floor`, `wall` or `ceiling`), optional `wallId` for a wall item. `position` is the bottom center, whose height a floor or wall item may change (a lamp on a table), and `size` is the footprint in meters, copied at placement so geometry never needs the catalog. `materialOverrides` is defined and not used yet. A photo's `assetId` is `photo:<uploadId>`, and its image is an upload rather than a catalog entry.
 - **Room:** `wallHeight`, `walls`, `openings`, optional `floorMaterialId`.
 - **Wall:** `start` and `end` in plan coordinates, `thickness`, optional `materialId`.
 - **Opening:** belongs to a wall by `wallId`. `offset` runs along the wall from its start to the opening's near edge, and `sill` is the height of its bottom edge above the floor (always 0 for a door).
 - **Assets are referenced by ID.** An ID that is unset or no longer in the catalog is not an error: the surface falls back to a plain color.
-- **Catalog asset** (`model`, `picture` or `rug`): `id`, `name`, `kind`, `category`, `tags`, `mount`, `url`, `thumbnailUrl`, `dimensions`, `license`, `sourceUrl`. `category` is a closed list in `catalog.ts`, and `mount` is where an item goes when first placed. `dimensions` is always [x, y up, z]: a picture's z is its frame depth and a rug's y its thickness. `license` and `sourceUrl` are separate fields, which departs from PLAN.md's single string.
-- **Material asset:** as PLAN.md describes, also with `sourceUrl`, and with an empty `thumbnailUrl` because nothing displays one.
+- **Catalog asset** (`model`, `picture` or `rug`): `id`, `name`, `kind`, `category`, `tags`, `mount`, `url`, `thumbnailUrl`, `dimensions`, `license`, `sourceUrl`. `category` is a closed list in `catalog.ts`, and `mount` is where an item goes when first placed. `dimensions` is always [x, y up, z]: a picture's z is its frame depth and a rug's y its thickness. `license` and `sourceUrl` are separate fields, which departs from PLAN.md's single string. A model that gives light also has `light`: its bulb's `position` from the pivot, `color`, `intensity` and `distance`. An import keeps it only if the request passes it, so `scripts/seed-models.ts` holds the seed lamps' values, and a newly imported lamp gets its `light` added to `seed/catalog.json` by hand.
+- **Material asset:** as PLAN.md describes, also with `sourceUrl`, and with an empty `thumbnailUrl` because nothing displays one. Optional `roughness` and `tint` multiply the roughness and color maps, to calibrate a scan: the source parquet is nearly a mirror, and the source "white" plaster is mid-grey.
+- **Environment asset** (`kind: 'environment'`): `id`, `name`, `url` of a Radiance `.hdr`, `license`, `sourceUrl`. It isn't placed, so `parseCatalog` leaves it out of the panel.
 
 **Migration.** Every load goes through `parseDesign` → `migrate(doc)` (`src/model/migrate.ts`). It runs the pure steps in `MIGRATIONS`, one per version, then checks the fields the editor reads without a guard. A newer `schemaVersion` throws `NewerSchemaError`, whose message the editor shows instead of opening the design, and anything malformed throws `UnreadableDesignError`. There are no steps yet because the schema is still at 1.
 
@@ -165,7 +167,7 @@ To change the schema, bump `CURRENT_SCHEMA_VERSION` and add one step; `Design['s
 - **The room outline** is found from the walls by `findRoomLoop`: it prunes dead ends, traces the outer boundary, and takes the largest simple polygon. Its edges run counterclockwise. The floor exists only while such an outline does.
 - **A wall on the outline** has `start` and `end` on its room-side face, with thickness extending away from the room, so drawn lengths are inside dimensions. **Any other wall** (a partition or an unfinished run) is centered on its line. See `wallFootprints`.
 - **Texture coordinates are in meters,** and each material's repeat is set from its tile size, so tiles keep their real-world size on any surface.
-- **An item's front faces +z at `rotationY` 0.** Its footprint is its `size` turned by `rotationY` around its `position`. A wall item's back is flush with the wall face nearest where it was placed, and its front points away from the wall (`placeOnWall` in `src/model/items.ts`). Wall items slide along their wall and are re-hung whenever their wall changes; an item whose wall is removed is removed too.
+- **An item's front faces +z at `rotationY` 0.** Its footprint is its `size` turned by `rotationY` around its `position`. A wall item's back is flush with the wall face nearest where it was placed, and its front points away from the wall (`placeOnWall` in `src/model/items.ts`). Wall items slide along their wall and are re-hung whenever their wall changes; an item whose wall is removed is removed too. A ceiling item's top is at the top of the walls (there is no ceiling surface), and it follows them when the wall height changes.
 
 ## Editing and rendering flow
 
@@ -193,13 +195,31 @@ sequenceDiagram
 - **One choke point for edits.** Every action in `src/store/designStore.ts` goes through `commit`, which records one undo step, or joins the open gesture. Room edits go through `updateRoom`, which also re-hangs wall items. `setDesign` replaces the whole document and clears the history.
 - **Undo is snapshot-based.** Each step holds the room and items as they were before and after the edit. Undo applies the `before` side and redo the `after` side, so both are exact. The history keeps the latest 200 steps and is cleared by `setDesign`.
 - **Gestures group a drag into one step.** `beginGesture` and `endGesture` bracket a press in the plan and each gizmo drag. Edits in between apply at once, so the view follows the pointer, and only the end of the gesture is recorded.
-- **Items in the scene** are groups named by item id, so the gizmo can find the object it moves. A model is read with `useGLTF`, and a photo's image with `useTexture` from `/api/assets/uploads/`. Until an item's image is known, a box of its size stands in for it. Overlapping floor items get a red footprint; rugs and wall items never count, since rugs sit under things and pictures hang on walls.
+- **Items in the scene** are groups named by item id, so the gizmo can find the object it moves. A model is read with `useGLTF`, and a photo's image with `useTexture` from `/api/assets/uploads/`. Until an item's image is known, a box of its size stands in for it. Floor items that overlap in plan and in height get a red footprint, so a lamp on a table isn't flagged; rugs and wall items never count, since rugs sit under things and pictures hang on walls.
 - **Openings follow their walls.** Edits to walls and wall height run `refitOpenings`, which refuses the edit if an opening can no longer fit. Removing a wall removes its openings.
 - **Geometry is cached per wall.** `buildRoomGeometry` runs on every change, including each pointer move while dragging, so walls are keyed on their inputs and only the wall that changed is cut again with CSG. A material isn't an input, so changing one rebuilds nothing.
-- **Rendering is on demand** (`frameloop="demand"`). Anything that changes the picture outside React's props must call `invalidate()`.
+- **Rendering is on demand** (`frameloop="demand"`). Anything that changes the picture outside React's props must call `invalidate()`. `?stats` in the viewer is the one exception: it draws every frame, to measure them.
+- **The shadow map is redrawn only when something changes.** The sun never moves, so orbiting can't change a shadow, and `gl.shadowMap.autoUpdate` is off. Anything that changes what casts a shadow must call `useShadowRefresh` (`src/scene/lighting.tsx`), as surfaces, items and arriving models do. A shape that doesn't is drawn with a stale shadow.
 - **Saving a picture doesn't use `preserveDrawingBuffer`,** which would slow every frame on a phone. `renderToCanvas` (`src/scene/capture.ts`) resizes the renderer, draws once with its own camera, copies to a 2D canvas, then restores the size and redraws, all in one task, so nothing flickers. It works at any size and with the pane hidden. Objects with `CAPTURE_HIDDEN` in `userData` (the gizmo and overlap warnings) are left out, so anything else editor-only that's drawn in the scene needs it too.
 - **Textures** load through `/api/assets/*` and are cached for the session per material. The surface shows the material's plain color until they arrive, and stays that way if they fail.
-- **Lighting** uses local drei `Lightformer`s rather than a fetched HDRI, so scenes make no third-party requests.
+- **Lighting** comes from three sources (`src/scene/lighting.tsx`). An HDRI, self-hosted so scenes make no third-party requests, gives ambient light and reflections but isn't drawn as a backdrop. It's fetched once per session, and local `Lightformer`s stand in until it arrives, or for good if it fails. One directional sun casts soft shadows (`PCFShadowMap`, a soft filter in this version of three.js, with its frustum fitted to the room), and a shadowless fill lifts the walls it can't reach. Lamps are point lights without shadows plus a glow sprite: a point light's shadow would mean six more passes over the scene, so their light passes through walls and furniture, within a short `distance`. Tone mapping is `NeutralToneMapping`, which keeps a material's color.
+- **Lamps are worked out from the catalog at render time** (`lampLights` in `src/model/items.ts`), not stored in the design, so nothing in the schema changed. Only the first `maxLamps` lamps in placement order give light, and the editor says so past that.
+
+## Phone budget
+
+The viewer must hold 30 fps on a mid-range phone. Three parts serve that.
+
+- **Quality tiers** (`src/scene/quality.ts`): `high`, `medium`, `low` and `minimal` set the pixel ratio, shadow map, lamp count and model texture size. The editor stays at `high`. The viewer starts from what the browser reveals (a touch device starts at `medium`, a small one at `low`), and `FrameBudget` steps down one tier when the median of 30 animation frames is too slow while the scene is drawing. It times the browser's animation frames rather than the scene's draws, because a slow drag on a fast device also draws sparsely. It never steps back up in a session. `?quality=<tier>` pins a tier.
+- **Model preparation** (`fitModelToBudget` in `src/scene/textureBudget.ts`), on load, at every tier. Textures are drawn smaller to the tier's limit, because they're uncompressed and a phone's memory runs out before its frame rate does. Transmissive glass becomes plain see-through glass, because three.js draws the whole scene a second time on every frame for any transmissive material. Double-sided transparent materials are drawn in one pass.
+- **Enforced numbers:** `e2e/polish.spec.ts` loads a furnished room (`e2e/furnished-room.ts`) at phone size and `medium`, and requires at most 80 draw calls, 300,000 triangles, 150 MB of textures on the GPU and 30 MB of downloads. It stood at 29 draw calls, 184,000 triangles and 109 MB when set. The limits are judgment calls for a mid-range phone, not measurements of one.
+
+**e2e can't measure a phone's frame rate:** it renders in software. `/v/<id>?stats` shows frame rate, draw calls, triangles, texture memory and tier, for checking on a real phone. `E2E_MEASURE=1 npx playwright test capture-furnished --project=phone --workers=1` prints each tier, and `E2E_CAPTURE_DIR` saves pictures of the room.
+
+## Keyboard and accessibility
+
+- **Shortcuts live where their state does:** `EditorPage` handles views, history, selection and the item keys, and `PlanEditor` handles plan tools. Both share `src/editor/shortcuts.ts`, which stops single keys while typing or under an open dialog and holds the list the `?` dialog shows, so a new shortcut must be added to that list by hand. The viewer has its own: number keys choose camera views.
+- **Parts of the plan are focusable** SVG buttons: Tab reaches walls, items and openings, and Enter or Space selects one. This is how a keyboard selects anything, since the 3D scene has no keyboard route. Selecting an item is announced through a visually hidden status line.
+- **Focus rings** are global (`:focus-visible` in `styles.css`), and `prefers-reduced-motion` turns off CSS motion and camera damping. The viewer's canvas is labeled as an image.
 
 ## Saving and loading
 
@@ -306,7 +326,7 @@ flowchart TD
 | `designs/<id>.json`, with `name` and `updatedAt` as custom metadata | `PUT /api/designs/:id` | `GET /api/designs/:id`, and `GET /api/designs` through R2 `list` |
 | `snapshots/<id>.json`, with `name` and `updatedAt` as custom metadata | `PUT /api/snapshots/:id` | `GET /api/snapshots/:id`, and `GET /v/:id` for the metadata |
 | `assets/snapshots/<id>.jpg` | `PUT /api/snapshots/:id/preview` | `GET /api/assets/snapshots/<id>.jpg` |
-| `assets/<assetId>/<file>` | `scripts/import-asset.ts`, `scripts/seed-r2.mjs` | `GET /api/assets/*` |
+| `assets/<assetId>/<file>`, including the HDRI at `assets/<assetId>/environment.hdr` | `scripts/import-asset.ts`, `scripts/seed-r2.mjs` | `GET /api/assets/*` |
 | `assets/uploads/<id>.webp` | `PUT /api/uploads/:id` | `GET /api/assets/uploads/<id>.webp` |
 | `catalog.json` | `scripts/import-asset.ts`, `scripts/seed-r2.mjs` | `GET /api/catalog` |
 
@@ -316,7 +336,7 @@ There is no database. D1 is an option in the plan but isn't used: the list is on
 
 **Uploads** are the photos behind pictures and rugs. The browser shrinks each to 1600 px on its longest side and re-encodes it as WebP before upload, so the 2 MiB cap is a ceiling. Only items refer to an upload, and nothing deletes one yet.
 
-**Assets** are checked in under `seed/` and uploaded key for key. A model is `assets/<id>/model.glb`, an image `assets/<id>/image.webp`, and either has `assets/<id>/thumbnail.webp`. Materials are Poly Haven 1K maps converted to WebP by `scripts/fetch-materials.mjs`. Asset paths in the catalog are relative to the API root (`assets/…`), and the client prefixes `/api/`.
+**Assets** are checked in under `seed/` and uploaded key for key. A model is `assets/<id>/model.glb`, an image `assets/<id>/image.webp`, and either has `assets/<id>/thumbnail.webp`. Materials are Poly Haven 1K maps converted to WebP by `scripts/fetch-materials.mjs`, and the HDRI is Poly Haven's 1K `.hdr`, fetched as it is by `scripts/fetch-environment.mjs`. Asset paths in the catalog are relative to the API root (`assets/…`), and the client prefixes `/api/`.
 
 **The import pipeline** is `scripts/import-asset.ts` over `scripts/import/`:
 
@@ -334,7 +354,7 @@ flowchart LR
 - **`seed/catalog.json` is the catalog's source of truth,** and the bucket's `catalog.json` is a copy of it. An import reads the local file, so it must run from an up-to-date checkout, and `seed/` must be committed afterward.
 - **`scripts/seed-models.ts`** rebuilds the seed furniture from Poly Haven through the same pipeline, checking each file's md5 and each model's height against the published size. It doesn't upload.
 
-**The catalog is read two ways.** The catalog panel fetches furniture at runtime through `GET /api/catalog` (`src/api/catalog.ts`), so an import needs no deploy. Materials stay compiled in: `src/model/materials.ts` imports `seed/catalog.json` at build time, because surfaces look them up synchronously and imports don't add them. Seeding doesn't run on deploy: when `seed/` changes other than by an import, run `npm run seed:remote` before merging. Until it runs, production's new material entries point at objects that don't exist and surfaces using them stay a plain color, and the panel lists only what the bucket's `catalog.json` lists.
+**The catalog is read two ways.** The catalog panel fetches furniture at runtime through `GET /api/catalog` (`src/api/catalog.ts`), so an import needs no deploy. Materials and the environment stay compiled in: `src/model/materials.ts` and `src/model/environment.ts` import `seed/catalog.json` at build time, because surfaces look materials up synchronously and imports add neither. Seeding doesn't run on deploy: when `seed/` changes other than by an import, run `npm run seed:remote` before merging. Until it runs, production's new material entries point at objects that don't exist and surfaces using them stay a plain color, a new HDRI falls back to built-in light, and the panel and lamps know only what the bucket's `catalog.json` lists.
 
 **Limits** are in [PLAN.md](PLAN.md#cloudflare-free-tier-limits). The 10 ms CPU limit on Functions is the one that shapes the design: heavy work happens in `scripts/` or the browser, never in a Function.
 
@@ -348,7 +368,7 @@ flowchart LR
 | End to end | Playwright (`e2e/`) | A fresh build on the real Pages runtime (workerd) with local R2. Every seed model is loaded in the browser and measured, and one test runs the real import command |
 
 - **Access in e2e:** `playwright.config.ts` generates a throwaway RSA key each run, and `e2e/access-token.ts` signs short-lived tokens with it, so the real verification path is exercised.
-- **Browsers:** a desktop project runs every spec and a phone project runs the chair and share specs. Both use software WebGL, so no GPU is needed: SwiftShader by default, or the ANGLE backend named by `E2E_ANGLE`.
+- **Browsers:** a desktop project runs every spec and a phone project runs the chair, share and polish specs. `capture-furnished.spec.ts` skips itself unless asked to measure or take pictures. Both use software WebGL, so no GPU is needed: SwiftShader by default, or the ANGLE backend named by `E2E_ANGLE`.
 - **CI** (`.github/workflows/ci.yml`) runs build, unit tests and e2e on pushes to `main` and on pull requests. Its e2e step installs Mesa and sets `E2E_ANGLE=gl-egl` to render with llvmpipe, because SwiftShader with two workers overloads the runner until tests time out.
 - **Deploys** use Pages' Git integration: `main` goes to production (`whimsy-forge-cze.pages.dev`), and other branches go to Access-restricted previews (`<branch>.whimsy-forge-cze.pages.dev`).
 - **Scripts** are TypeScript run directly by Node 22.18+ with type stripping, and type-checked by `tsconfig.node.json`. `scripts/seed-r2.mjs` uses `wrangler r2 bulk put`, grouped by content type, to keep the e2e server's start within its timeout.
@@ -371,14 +391,17 @@ flowchart LR
 | A photo is placed once from its upload; there is no library, so placing it again needs a new upload | Keeps M4 to the placement workflow | Not planned yet |
 | Uploads are never deleted, even when no item uses them any more | Storage is small, and deletion needs a reference check | Not planned yet |
 | The undo history is lost on reload | The design itself is safe; history is only for the session | Not planned |
+| The 30 fps target hasn't been measured on a real mid-range phone | Budgets are enforced in e2e and the viewer steps down if it's slow, but neither is the phone itself | Owner: open `/v/<id>?stats` on a phone |
+| Lamps cast no shadows, and their light passes through walls | A shadow per lamp is too costly on a phone, and a room's lamps are mostly in that room | Not planned |
+| Lamps have no on/off or dimmer, and only the first few give light | Keeps the Design schema unchanged | Not planned yet |
+| A ceiling item placed before M7 stays on the floor until the room is next edited | M4's placement put it there; `followWalls` corrects it on the next room edit, but a snapshot stays as it was | Not planned |
+| A phone's saved image uses its smaller model textures | Export from a desktop for the best picture | Not planned |
 
 ## Planned architecture
 
 **Not built.** These notes record what the current architecture implies for coming milestones. They aren't decisions: the milestone's agent decides, then moves the result into the as-built sections above.
 
-| Milestone | Adds | Notes for the implementer |
-| --- | --- | --- |
-| M7 Polish | HDRI, soft shadows, lamps, phone budget | An HDRI should be self-hosted in R2 to keep scenes free of third-party requests. Budget: textures up to 2048 px, roughly 30 MB per design. |
+None at the moment: every milestone in [PLAN.md](PLAN.md) has been built.
 
 ## Open design questions
 
