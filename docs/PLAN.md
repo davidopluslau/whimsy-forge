@@ -133,6 +133,8 @@ Sources: [Pages limits](https://developers.cloudflare.com/pages/platform/limits/
 
 **Each milestone is built in one shot.** Claude Code completes a milestone in a single session without stopping for questions, deciding design choices up to moderately consequential (especially reversible) ones itself and listing them in the PR under "Decisions made". It stops only for very consequential choices, such as switching infrastructure providers. Milestones are not chained: the owner reviews and merges each PR before the next milestone starts. Details in `CLAUDE.md`.
 
+This plan records intent. The architecture as built is in [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md), which every agent checks before each push and updates if the branch changes the architecture.
+
 | Milestone | Needs | File |
 | --- | --- | --- |
 | M0 Spike and scaffolding | — | [M0.md](milestones/M0.md) |
