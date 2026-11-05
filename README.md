@@ -2,13 +2,11 @@
 
 Build 3D interior designs and share them as read-only links.
 
-- Plan: [docs/PLAN.md](docs/PLAN.md)
+- Product: [docs/PRODUCT.md](docs/PRODUCT.md)
 - System design: [docs/SYSTEM_DESIGN.md](docs/SYSTEM_DESIGN.md)
-- Milestones: [docs/milestones](docs/milestones)
+- How work is planned and tracked: [docs/WORKFLOW.md](docs/WORKFLOW.md), [Issues](https://github.com/davidopluslau/whimsy-forge/issues), [feature briefs](docs/features)
 - Cloudflare setup: [docs/setup/cloudflare.md](docs/setup/cloudflare.md)
 - Notes for Claude Code: [CLAUDE.md](CLAUDE.md)
-
-Status: [M0 — Spike and scaffolding](docs/milestones/M0.md) is built and awaiting Cloudflare setup.
 
 ## Development
 
