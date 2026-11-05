@@ -207,7 +207,7 @@ sequenceDiagram
 
 ## Phone budget
 
-The viewer must hold 30 fps on a mid-range phone. Three parts serve that.
+The viewer must hold 30 fps on a mid-range phone, which the owner confirmed on a real phone at M7. Three parts serve that.
 
 - **Quality tiers** (`src/scene/quality.ts`): `high`, `medium`, `low` and `minimal` set the pixel ratio, shadow map, lamp count and model texture size. The editor stays at `high`. The viewer starts from what the browser reveals (a touch device starts at `medium`, a small one at `low`), and `FrameBudget` steps down one tier when the median of 30 animation frames is too slow while the scene is drawing. It times the browser's animation frames rather than the scene's draws, because a slow drag on a fast device also draws sparsely. It never steps back up in a session. `?quality=<tier>` pins a tier.
 - **Model preparation** (`fitModelToBudget` in `src/scene/textureBudget.ts`), on load, at every tier. Textures are drawn smaller to the tier's limit, because they're uncompressed and a phone's memory runs out before its frame rate does. Transmissive glass becomes plain see-through glass, because three.js draws the whole scene a second time on every frame for any transmissive material. Double-sided transparent materials are drawn in one pass.
@@ -391,7 +391,6 @@ flowchart LR
 | A photo is placed once from its upload; there is no library, so placing it again needs a new upload | Keeps M4 to the placement workflow | Not planned yet |
 | Uploads are never deleted, even when no item uses them any more | Storage is small, and deletion needs a reference check | Not planned yet |
 | The undo history is lost on reload | The design itself is safe; history is only for the session | Not planned |
-| The 30 fps target hasn't been measured on a real mid-range phone | Budgets are enforced in e2e and the viewer steps down if it's slow, but neither is the phone itself | Owner: open `/v/<id>?stats` on a phone |
 | Lamps cast no shadows, and their light passes through walls | A shadow per lamp is too costly on a phone, and a room's lamps are mostly in that room | Not planned |
 | Lamps have no on/off or dimmer, and only the first few give light | Keeps the Design schema unchanged | Not planned yet |
 | A ceiling item placed before M7 stays on the floor until the room is next edited | M4's placement put it there; `followWalls` corrects it on the next room edit, but a snapshot stays as it was | Not planned |
