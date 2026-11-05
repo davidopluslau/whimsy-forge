@@ -814,3 +814,136 @@ a {
   gap: 8px;
   margin-top: 8px;
 }
+
+.editor button.button-primary {
+  color: var(--bg);
+  border: 0;
+  cursor: pointer;
+}
+
+.editor button.button-primary:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.share__export-error {
+  color: var(--danger);
+}
+
+.share {
+  width: min(32rem, calc(100vw - 32px));
+  padding: 16px;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.share::backdrop {
+  background: rgb(0 0 0 / 0.4);
+}
+
+.share h2 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.share p {
+  margin: 0 0 8px;
+}
+
+.share__error {
+  color: var(--danger);
+}
+
+.editor input.share__link {
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.share__note {
+  color: var(--muted);
+}
+
+.share__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.viewer {
+  position: relative;
+  height: 100dvh;
+  overflow: hidden;
+  font-size: 0.875rem;
+}
+
+.viewer canvas {
+  display: block;
+}
+
+.viewer button {
+  font: inherit;
+  color: inherit;
+}
+
+/* Panels float over the scene, so they need a background of their own in both color schemes. */
+.viewer__panel {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.viewer__name {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  left: 12px;
+  max-width: calc(100% - 24px);
+  margin: 0;
+  padding: 6px 10px;
+  overflow: hidden;
+  font-size: 1rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.viewer__controls {
+  position: absolute;
+  right: 12px;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  left: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  justify-content: center;
+  gap: 8px;
+  /* Drags between the buttons still orbit. */
+  pointer-events: none;
+}
+
+.viewer__controls > * {
+  pointer-events: auto;
+}
+
+/* Large enough for a finger. */
+.viewer__controls button {
+  min-height: 44px;
+}
+
+.viewer__controls .segmented button {
+  padding: 6px 10px;
+}
+
+.viewer__error {
+  margin: 0;
+  padding: 6px 10px;
+  color: var(--danger);
+}

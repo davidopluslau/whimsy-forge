@@ -48,6 +48,9 @@ export type Item = {
   materialOverrides?: Record<string, string>;
 };
 
+/** A named view of the room. Only a snapshot has one so far: the view it was shared from. */
+export type DesignCamera = { name: string; position: Vec3; target: Vec3 };
+
 /** All lengths are meters. */
 export type Design = {
   schemaVersion: typeof CURRENT_SCHEMA_VERSION;
@@ -56,7 +59,7 @@ export type Design = {
   updatedAt: string;
   room: Room;
   items: Item[];
-  cameras: { name: string; position: Vec3; target: Vec3 }[];
+  cameras: DesignCamera[];
 };
 
 export const CURRENT_SCHEMA_VERSION = 1;
@@ -86,6 +89,15 @@ export function cleanDesignName(name: string): string | null {
 export function renamedDesign(design: Design, name: string): Design {
   const cleaned = cleanDesignName(name);
   return cleaned === null || cleaned === design.name ? design : { ...design, name: cleaned };
+}
+
+/**
+ * What a share link shows: an independent copy under the snapshot's own id. It must not carry the live
+ * design's id, because that id is enough to read the design and all its future edits. `view` is where
+ * the owner was looking, which the viewer opens at.
+ */
+export function snapshotOf(design: Design, snapshotId: string, view: Pick<DesignCamera, 'position' | 'target'> | null): Design {
+  return { ...structuredClone(design), id: snapshotId, cameras: view ? [{ name: 'Shared view', position: view.position, target: view.target }] : [] };
 }
 
 /** An independent copy under its own id. Items keep their ids, which are unique only within a design. */

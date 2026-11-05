@@ -1,19 +1,17 @@
 import { Environment, Lightformer, OrbitControls } from '@react-three/drei';
 import { Canvas, useThree } from '@react-three/fiber';
-import { type MutableRefObject, useEffect, useMemo, useState } from 'react';
+import { type MutableRefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { BufferAttribute, BufferGeometry, Plane, Raycaster, RepeatWrapping, SRGBColorSpace, TextureLoader, Vector2, Vector3, type Texture } from 'three';
 import type { Item, Room, Vec2 } from '../model/design';
 import { materialById, type MaterialAsset } from '../model/materials';
 import type { CatalogAsset } from '../model/catalog';
 import { itemImage } from '../model/items';
 import { buildRoomGeometry, floorUvs, type RoomGeometry } from './roomGeometry';
+import { CAPTURE_HIDDEN, renderToCanvas, type SceneCapture } from './capture';
+import { type CameraView, FOV, framedView, OVERVIEW_POSITION } from './cameraViews';
 import { ItemGizmo, type GizmoMode, type GizmoPatch } from './ItemGizmo';
 import { ItemMesh } from './ItemMesh';
 
-const FOV = 40;
-/** High enough to see the floor over the near walls. */
-const INITIAL_CAMERA_POSITION: [number, number, number] = [4, 10, 6];
-const MIN_FRAMED_RADIUS = 2;
 const WALL_COLOR = '#ece6da';
 const FLOOR_COLOR = '#b08d66';
 const BACKGROUND_COLOR = '#d9d4ca';
@@ -106,22 +104,78 @@ function FrameRoom({ bounds, wallHeight }: { bounds: RoomGeometry['bounds']; wal
   const invalidate = useThree((state) => state.invalidate);
   const width = useThree((state) => state.size.width);
   const height = useThree((state) => state.size.height);
-  const radius = Math.hypot(Math.max(bounds?.radius ?? 0, MIN_FRAMED_RADIUS), wallHeight / 2);
+  const radius = bounds?.radius ?? 0;
   const centerX = bounds?.center[0] ?? 0;
   const centerY = bounds?.center[1] ?? 0;
 
   useEffect(() => {
     // The pane has no size while it is hidden.
     if (!controls || width === 0 || height === 0) return;
-    const tanVertical = Math.tan(((FOV / 2) * Math.PI) / 180);
-    const halfAngle = Math.min(Math.atan(tanVertical), Math.atan(tanVertical * (width / height)));
     const direction = camera.position.clone().sub(controls.target).normalize();
-    controls.target.set(centerX, wallHeight / 2, centerY);
-    camera.position.copy(controls.target).addScaledVector(direction, radius / Math.sin(halfAngle));
+    const framed = framedView({ center: [centerX, centerY], radius }, wallHeight, width / height, [direction.x, direction.y, direction.z]);
+    controls.target.set(...framed.target);
+    camera.position.set(...framed.position);
     controls.update();
     invalidate();
   }, [camera, controls, invalidate, radius, centerX, centerY, wallHeight, width, height]);
 
+  return null;
+}
+
+/** A view for the camera to go to. Passing a new object goes there again, even if the view is the same. */
+export type ViewRequest = { view: (aspect: number) => CameraView };
+
+/** Takes the camera to the requested view, instead of `FrameRoom`, and again if the canvas changes shape. */
+function ApplyView({ request }: { request: ViewRequest }) {
+  const camera = useThree((state) => state.camera);
+  const controls = useThree((state) => state.controls) as unknown as Controls | null;
+  const invalidate = useThree((state) => state.invalidate);
+  const width = useThree((state) => state.size.width);
+  const height = useThree((state) => state.size.height);
+
+  useEffect(() => {
+    if (!controls || width === 0 || height === 0) return;
+    const { position, target } = request.view(width / height);
+    controls.target.set(...target);
+    camera.position.set(...position);
+    controls.update();
+    invalidate();
+  }, [camera, controls, invalidate, request, width, height]);
+
+  return null;
+}
+
+/** Hands the parent a way to save pictures of the scene, once the canvas exists. */
+function CaptureHandle({ target, bounds, wallHeight }: { target: MutableRefObject<SceneCapture | null>; bounds: RoomGeometry['bounds']; wallHeight: number }) {
+  const get = useThree((state) => state.get);
+  // Read when a picture is taken, so the handle always frames the room as it is then.
+  const room = useRef({ bounds, wallHeight });
+  room.current = { bounds, wallHeight };
+
+  useEffect(() => {
+    const paneSize = () => {
+      const { gl } = get();
+      return gl.domElement.clientWidth > 0 && gl.domElement.clientHeight > 0 ? { width: gl.domElement.width, height: gl.domElement.height } : null;
+    };
+    const currentView = (): CameraView | null => {
+      const { camera, controls } = get();
+      if (!paneSize() || !controls) return null;
+      const { x, y, z } = (controls as unknown as Controls).target;
+      return { position: [camera.position.x, camera.position.y, camera.position.z], target: [x, y, z] };
+    };
+    target.current = {
+      paneSize,
+      currentView,
+      render: (width, height) => {
+        const { gl, scene, camera } = get();
+        const view = currentView() ?? framedView(room.current.bounds, room.current.wallHeight, width / height, OVERVIEW_POSITION);
+        return renderToCanvas(gl, scene, camera, { width, height, view });
+      },
+    };
+    return () => {
+      target.current = null;
+    };
+  }, [get, target]);
   return null;
 }
 
@@ -168,16 +222,22 @@ type RoomSceneProps = {
   overlapping?: ReadonlySet<string>;
   /** Present only in the editor; the read-only viewer leaves it out. */
   editing?: SceneEditing;
+  /** Where the camera should be. Without it, the camera keeps the room framed as it changes. */
+  viewRequest?: ViewRequest;
+  /** Called when the user starts moving the camera themselves. */
+  onOrbitStart?: () => void;
+  /** Filled in with a way to save pictures of the scene, once it exists. */
+  capture?: MutableRefObject<SceneCapture | null>;
 };
 
 /** The 3D view of a room. Everything here is derived from the Design's room and items. */
-export function RoomScene({ room, items = [], catalog = new Map(), overlapping = new Set(), editing }: RoomSceneProps) {
+export function RoomScene({ room, items = [], catalog = new Map(), overlapping = new Set(), editing, viewRequest, onOrbitStart, capture }: RoomSceneProps) {
   const geometry = useMemo(() => buildRoomGeometry(room), [room]);
   const floorTexCoords = useMemo(() => (geometry.floor ? floorUvs(geometry.floor) : null), [geometry.floor]);
   const selected = editing ? (items.find((item) => item.id === editing.selectedId) ?? null) : null;
 
   return (
-    <Canvas frameloop="demand" dpr={[1, 2]} camera={{ position: INITIAL_CAMERA_POSITION, fov: FOV }} onPointerMissed={editing ? () => editing.onSelect(null) : undefined}>
+    <Canvas frameloop="demand" dpr={[1, 2]} camera={{ position: OVERVIEW_POSITION, fov: FOV }} onPointerMissed={editing ? () => editing.onSelect(null) : undefined}>
       <color attach="background" args={[BACKGROUND_COLOR]} />
       <Environment resolution={64} frames={1}>
         <Lightformer intensity={2.5} position={[0, 4, 0]} rotation={[Math.PI / 2, 0, 0]} scale={8} />
@@ -198,11 +258,14 @@ export function RoomScene({ room, items = [], catalog = new Map(), overlapping =
           onSelect={editing ? (id) => editing.onSelect(id) : undefined}
         />
       ))}
-      <OrbitControls makeDefault maxPolarAngle={Math.PI / 2 - 0.02} />
-      <FrameRoom bounds={geometry.bounds} wallHeight={room.wallHeight} />
+      <OrbitControls makeDefault maxPolarAngle={Math.PI / 2 - 0.02} onStart={onOrbitStart} />
+      {viewRequest ? <ApplyView request={viewRequest} /> : <FrameRoom bounds={geometry.bounds} wallHeight={room.wallHeight} />}
+      {capture && <CaptureHandle target={capture} bounds={geometry.bounds} wallHeight={room.wallHeight} />}
       {editing && (
         <>
-          <ItemGizmo item={selected} mode={editing.gizmo} room={room} onChange={editing.onItemChange} onStart={editing.onGestureStart} onEnd={editing.onGestureEnd} />
+          <group userData={CAPTURE_HIDDEN}>
+            <ItemGizmo item={selected} mode={editing.gizmo} room={room} onChange={editing.onItemChange} onStart={editing.onGestureStart} onEnd={editing.onGestureEnd} />
+          </group>
           <FloorPickerHandle target={editing.pickFloor} />
         </>
       )}
