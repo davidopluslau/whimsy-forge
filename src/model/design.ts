@@ -3,26 +3,37 @@ import { generateId } from './ids';
 export type Vec2 = [number, number];
 export type Vec3 = [number, number, number];
 
+/**
+ * A wall's start and end trace its room-side face wherever the wall is part of the closed outline,
+ * so the drawn lengths are the room's inside dimensions. Thickness extends away from the room.
+ * Walls outside the outline (partitions, unfinished runs) are centered on the line instead.
+ */
+export type Wall = { id: string; start: Vec2; end: Vec2; thickness: number; materialId?: string };
+
+export type Opening = {
+  id: string;
+  wallId: string;
+  kind: 'door' | 'window';
+  offset: number;
+  width: number;
+  height: number;
+  sill: number;
+};
+
+export type Room = {
+  wallHeight: number;
+  walls: Wall[];
+  openings: Opening[];
+  floorMaterialId?: string;
+};
+
 /** All lengths are meters. */
 export type Design = {
   schemaVersion: 1;
   id: string;
   name: string;
   updatedAt: string;
-  room: {
-    wallHeight: number;
-    walls: { id: string; start: Vec2; end: Vec2; thickness: number; materialId?: string }[];
-    openings: {
-      id: string;
-      wallId: string;
-      kind: 'door' | 'window';
-      offset: number;
-      width: number;
-      height: number;
-      sill: number;
-    }[];
-    floorMaterialId?: string;
-  };
+  room: Room;
   items: {
     id: string;
     assetId: string;
