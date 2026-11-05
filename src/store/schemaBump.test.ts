@@ -5,7 +5,7 @@ import { buildRoomGeometry } from '../scene/roomGeometry';
 import { useDesignStore } from './designStore';
 
 /**
- * M5's acceptance test: a v1 file on disk still opens after the schema moves to v2. The bump is a
+ * Proves the migration path: a v1 file on disk still opens after the schema moves to v2. The bump is a
  * realistic one (every wall gains a required field), and it's made
  * only here, so the app's real version stays where it is.
  */

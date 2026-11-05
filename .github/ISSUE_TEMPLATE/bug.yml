@@ -1,0 +1,24 @@
+name: Bug
+description: Something that doesn't work as it should
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: "This repository is public. Check that screenshots don't show anything private, and don't post a live design's ID: it's enough to read that design."
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Where
+      placeholder: Production or preview, browser, phone or desktop

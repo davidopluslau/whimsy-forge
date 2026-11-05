@@ -1,19 +1,17 @@
 # Whimsy Forge — System Design
 
-**Reflects:** `main` through M7 (Polish).
-
-This document describes the system **as built**. For why the project exists, its requirements and its roadmap, see [PLAN.md](PLAN.md). For one milestone's scope, see [milestones/](milestones/). If this document and the code disagree, the code is right and this document has a bug: fix it.
+This document describes the system on `main`, **as built**. For why the project exists and its requirements, see [PRODUCT.md](PRODUCT.md). For how work is planned and tracked, see [WORKFLOW.md](WORKFLOW.md). If this document and the code disagree, the code is right and this document has a bug: fix it.
 
 ## Keeping this document live
 
-**Every agent must check this document before every push, and update it in the same push if the branch changes the architecture.** This applies to milestones and to any other work.
+**Every agent must check this document before every push, and update it in the same push if the branch changes the architecture.** This applies to all work: features, spikes that merge code, bug fixes and chores.
 
 Before running `git push`:
 
 1. Run `git fetch origin`, then review what the branch changes with `git diff --stat origin/main...HEAD`.
 2. Decide whether any of it is substantive, using the table below.
-3. If it is, edit this document and commit the edit so it goes out in that push. Update the **Reflects** line when a milestone's work is included.
-4. In the PR description, add a line: `System design: updated (<sections>)` or `System design: no substantive change`.
+3. If it is, edit this document and commit the edit so it goes out in that push.
+4. In the PR description, add a line: `System design: updated (<sections>)` or `System design: no substantive change`. CI's `PR description` check fails without it. The check can only see the line, so the review in steps 1 and 2 is still on the author.
 
 | Substantive: update this document | Not substantive: leave it alone |
 | --- | --- |
@@ -23,7 +21,7 @@ Before running `git push`:
 | A module's responsibility or dependency direction changes, or a new top-level module appears | Refactors inside one module |
 | State or data flow changes (store shape, save and load, undo, how the scene is derived) | New tests that follow the existing strategy |
 | An invariant or coordinate convention changes | New catalog entries and seed assets |
-| Build, test, CI or deployment changes | Ticking milestone checkboxes |
+| Build, test, CI or deployment changes | Changes to issues, feature briefs and their checklists |
 | A decision closes or creates an entry in [Open design questions](#open-design-questions) or [Known limitations](#known-limitations) | |
 
 When unsure, update it; a one-line edit costs little.
@@ -34,7 +32,7 @@ How to edit:
 - **Move built work out of [Planned](#planned-architecture).** Describe it in the as-built sections, and remove its notes and any open question it answers.
 - **Copy architecture-level "Decisions made" here.** The PR description is where the owner reviews a decision, and this document is where later agents find it.
 - **Keep it at the level of parts and how they relate.** Link to the code for details, and don't restate what a reader gets faster from a file.
-- **Resolve conflicts by keeping both sides' facts.** Milestones can run in parallel, so this file may conflict on rebase. After a rebase, repeat the check above.
+- **Resolve conflicts by keeping both sides' facts.** Branches can run in parallel, so this file may conflict on rebase. After a rebase, repeat the check above.
 
 ## System overview
 
@@ -84,6 +82,8 @@ flowchart LR
 | Asset tooling | Node scripts with `gltf-transform`, `sharp` and headless Chromium, run by hand and never in Functions | `scripts/`, `seed/` |
 | Lighting | One self-hosted CC0 HDRI, a shadow-casting sun, and lamps from the catalog | `src/scene/lighting.tsx` |
 | Photos | Resized and re-encoded to WebP in the browser (Canvas), then uploaded | `src/editor/photo.ts` |
+
+**Why a static site plus object storage.** Share links must open for people without an account, and the catalog needs binary 3D files. Two alternatives were rejected: a Claude artifact, whose asset store doesn't list `.glb` and whose database needs a signed-in viewer; and no backend at all, which means no design list, long links, and assets that still need a home. The trade-off is owning deploys and write auth. The design document doesn't depend on the host, so moving means replacing the storage layer.
 
 ## Core invariants
 
@@ -139,13 +139,13 @@ Dependencies point one way, toward `model`.
 
 - **`scene/` does not read the store.** `RoomScene` takes `room` and `items` as props, so the read-only viewer can reuse it without any editing code. The editing props (`editing`, selection, gizmo callbacks) are optional and only the editor passes them. The viewer has its own: `viewRequest`, `onOrbitStart`, `capture`, `onSlowFrames`, `onStats` and `label`.
 - **The viewer has no store and no editing code.** `SnapshotPage` holds its design in component state and never writes.
-- **`App.tsx` routes on `window.location.pathname`,** with no router library: `/v/<id>` is the read-only viewer, `/editor` is the design list, `/editor/new` creates a design and replaces itself in the address bar with `/editor/<id>`, `/editor/<id>` opens one, and every other path shows the M0 chair page. Moving between the list and the editor is a full page load. Unknown paths reach the app because Pages falls back to `index.html`.
+- **`App.tsx` routes on `window.location.pathname`,** with no router library: `/v/<id>` is the read-only viewer, `/editor` is the design list, `/editor/new` creates a design and replaces itself in the address bar with `/editor/<id>`, `/editor/<id>` opens one, and every other path shows the chair demo page. Moving between the list and the editor is a full page load. Unknown paths reach the app because Pages falls back to `index.html`.
 - **Pages are lazy chunks,** which keeps Three.js out of the entry chunk and out of the design list.
 - **`store/` doesn't call the API.** `Autosaver` is given its `put` and draft functions, and `editor/EditorRoute.tsx` wires them to `api/` and to the store.
 
 ## Data model
 
-Types are in `src/model/design.ts`, `src/model/catalog.ts`, `src/model/materials.ts` and `src/model/environment.ts`. `PLAN.md` has the original sketch; the code is authoritative.
+Types are in `src/model/design.ts`, `src/model/catalog.ts`, `src/model/materials.ts` and `src/model/environment.ts`.
 
 - **Design:** `schemaVersion` (currently 1, from `CURRENT_SCHEMA_VERSION`), `id`, `name`, `updatedAt`, `room`, `items`, `cameras`. `cameras` stays empty on a live design. On a snapshot it holds the view the owner shared from, unless the 3D pane was hidden, and it needed no schema change. The other camera presets are worked out from the room (`src/scene/cameraViews.ts`), not stored.
 - **Item:** `id`, `assetId`, `position`, `rotationY`, `size`, `mount` (`floor`, `wall` or `ceiling`), optional `wallId` for a wall item. `position` is the bottom center, whose height a floor or wall item may change (a lamp on a table), and `size` is the footprint in meters, copied at placement so geometry never needs the catalog. `materialOverrides` is defined and not used yet. A photo's `assetId` is `photo:<uploadId>`, and its image is an upload rather than a catalog entry.
@@ -153,8 +153,8 @@ Types are in `src/model/design.ts`, `src/model/catalog.ts`, `src/model/materials
 - **Wall:** `start` and `end` in plan coordinates, `thickness`, optional `materialId`.
 - **Opening:** belongs to a wall by `wallId`. `offset` runs along the wall from its start to the opening's near edge, and `sill` is the height of its bottom edge above the floor (always 0 for a door).
 - **Assets are referenced by ID.** An ID that is unset or no longer in the catalog is not an error: the surface falls back to a plain color.
-- **Catalog asset** (`model`, `picture` or `rug`): `id`, `name`, `kind`, `category`, `tags`, `mount`, `url`, `thumbnailUrl`, `dimensions`, `license`, `sourceUrl`. `category` is a closed list in `catalog.ts`, and `mount` is where an item goes when first placed. `dimensions` is always [x, y up, z]: a picture's z is its frame depth and a rug's y its thickness. `license` and `sourceUrl` are separate fields, which departs from PLAN.md's single string. A model that gives light also has `light`: its bulb's `position` from the pivot, `color`, `intensity` and `distance`. An import keeps it only if the request passes it, so `scripts/seed-models.ts` holds the seed lamps' values, and a newly imported lamp gets its `light` added to `seed/catalog.json` by hand.
-- **Material asset:** as PLAN.md describes, also with `sourceUrl`, and with an empty `thumbnailUrl` because nothing displays one. Optional `roughness` and `tint` multiply the roughness and color maps, to calibrate a scan: the source parquet is nearly a mirror, and the source "white" plaster is mid-grey.
+- **Catalog asset** (`model`, `picture` or `rug`): `id`, `name`, `kind`, `category`, `tags`, `mount`, `url`, `thumbnailUrl`, `dimensions`, `license`, `sourceUrl`. `category` is a closed list in `catalog.ts`, and `mount` is where an item goes when first placed. `dimensions` is always [x, y up, z]: a picture's z is its frame depth and a rug's y its thickness. A model that gives light also has `light`: its bulb's `position` from the pivot, `color`, `intensity` and `distance`. An import keeps it only if the request passes it, so `scripts/seed-models.ts` holds the seed lamps' values, and a newly imported lamp gets its `light` added to `seed/catalog.json` by hand.
+- **Material asset:** a tiling PBR texture. `url` is its color map, alongside `normalUrl`, `roughnessUrl`, the `surface` it suits, a plain fallback `color`, `license` and `sourceUrl`. `dimensions` is the size of one tile in meters, and `thumbnailUrl` is empty because nothing displays one. Optional `roughness` and `tint` multiply the roughness and color maps, to calibrate a scan: the source parquet is nearly a mirror, and the source "white" plaster is mid-grey.
 - **Environment asset** (`kind: 'environment'`): `id`, `name`, `url` of a Radiance `.hdr`, `license`, `sourceUrl`. It isn't placed, so `parseCatalog` leaves it out of the panel.
 
 **Migration.** Every load goes through `parseDesign` → `migrate(doc)` (`src/model/migrate.ts`). It runs the pure steps in `MIGRATIONS`, one per version, then checks the fields the editor reads without a guard. A newer `schemaVersion` throws `NewerSchemaError`, whose message the editor shows instead of opening the design, and anything malformed throws `UnreadableDesignError`. There are no steps yet because the schema is still at 1.
@@ -207,7 +207,7 @@ sequenceDiagram
 
 ## Phone budget
 
-The viewer must hold 30 fps on a mid-range phone. Three parts serve that.
+The viewer must hold 30 fps on a mid-range phone, which the owner confirmed on a real phone on 2026-11-05. Three parts serve that.
 
 - **Quality tiers** (`src/scene/quality.ts`): `high`, `medium`, `low` and `minimal` set the pixel ratio, shadow map, lamp count and model texture size. The editor stays at `high`. The viewer starts from what the browser reveals (a touch device starts at `medium`, a small one at `low`), and `FrameBudget` steps down one tier when the median of 30 animation frames is too slow while the scene is drawing. It times the browser's animation frames rather than the scene's draws, because a slow drag on a fast device also draws sparsely. It never steps back up in a session. `?quality=<tier>` pins a tier.
 - **Model preparation** (`fitModelToBudget` in `src/scene/textureBudget.ts`), on load, at every tier. Textures are drawn smaller to the tier's limit, because they're uncompressed and a phone's memory runs out before its frame rate does. Transmissive glass becomes plain see-through glass, because three.js draws the whole scene a second time on every frame for any transmissive material. Double-sided transparent materials are drawn in one pass.
@@ -330,9 +330,9 @@ flowchart TD
 | `assets/uploads/<id>.webp` | `PUT /api/uploads/:id` | `GET /api/assets/uploads/<id>.webp` |
 | `catalog.json` | `scripts/import-asset.ts`, `scripts/seed-r2.mjs` | `GET /api/catalog` |
 
-There is no database. D1 is an option in the plan but isn't used: the list is one R2 `list` call with custom metadata, so it reads no documents and has no index to keep in step. The name in the metadata is percent-encoded and cut to 100 code points to stay inside R2's 2 KiB limit. An object saved before M5 has no metadata, so the list shows it as unnamed, with its upload time.
+There is no database, and D1 isn't needed: the list is one R2 `list` call with custom metadata, so it reads no documents and has no index to keep in step. The name in the metadata is percent-encoded and cut to 100 code points to stay inside R2's 2 KiB limit. An object saved before the list existed has no metadata, so the list shows it as unnamed, with its upload time.
 
-**Snapshots use a flat key,** which departs from PLAN.md's `designs/<id>/snapshots/<timestamp>.json`: that key can't be found from `/v/<snapshotId>` alone, its timestamp is guessable, and putting the design's ID in the link would expose the live design. The flat prefix also keeps snapshots out of the design list's R2 `list`.
+**Snapshots use a flat key,** not one nested under their design such as `designs/<id>/snapshots/<timestamp>.json`: that key can't be found from `/v/<snapshotId>` alone, its timestamp is guessable, and putting the design's ID in the link would expose the live design. The flat prefix also keeps snapshots out of the design list's R2 `list`.
 
 **Uploads** are the photos behind pictures and rugs. The browser shrinks each to 1600 px on its longest side and re-encodes it as WebP before upload, so the 2 MiB cap is a ceiling. Only items refer to an upload, and nothing deletes one yet.
 
@@ -356,7 +356,28 @@ flowchart LR
 
 **The catalog is read two ways.** The catalog panel fetches furniture at runtime through `GET /api/catalog` (`src/api/catalog.ts`), so an import needs no deploy. Materials and the environment stay compiled in: `src/model/materials.ts` and `src/model/environment.ts` import `seed/catalog.json` at build time, because surfaces look materials up synchronously and imports add neither. Seeding doesn't run on deploy: when `seed/` changes other than by an import, run `npm run seed:remote` before merging. Until it runs, production's new material entries point at objects that don't exist and surfaces using them stay a plain color, a new HDRI falls back to built-in light, and the panel and lamps know only what the bucket's `catalog.json` lists.
 
-**Limits** are in [PLAN.md](PLAN.md#cloudflare-free-tier-limits). The 10 ms CPU limit on Functions is the one that shapes the design: heavy work happens in `scripts/` or the browser, never in a Function.
+## Cloudflare free-tier limits
+
+Checked against Cloudflare's docs on 2026-11-04. Recheck before relying on them.
+
+| Service | Limit on the free tier |
+| --- | --- |
+| Pages builds | 500 per month, 1 at a time, 20-minute timeout |
+| Pages site | 20,000 files, 25 MiB per file, 100 custom domains per project, unlimited preview deployments |
+| Functions requests | 100,000 per day, shared with Workers, reset at midnight UTC (Error 1027 beyond that) |
+| Functions runtime | 10 ms CPU per request, 128 MB memory, 50 subrequests per invocation, 64 MiB bundle |
+| Request body | 100 MB (set by the domain's Cloudflare plan) |
+| R2 storage | 10 GB-month per month, Standard storage only |
+| R2 operations | 1 million Class A and 10 million Class B per month |
+| R2 egress | Free |
+
+What this means for Whimsy Forge:
+
+- **CPU is the tightest limit.** 10 ms rules out heavy work in Functions, such as image processing, so it happens in `scripts/` or the browser. Design documents are capped at 1 MiB to keep JSON parsing cheap.
+- **Every asset read counts as a Function request** because assets are served through `/api/assets/*`. One user stays far below 100,000 per day, and assets carry a one-day browser cache. If a popular share link ever gets close, serve assets from an R2 custom domain instead.
+- **At a 30 MB per-design budget**, 10 GB holds roughly 300 designs' worth of unique assets.
+
+Sources: [Pages limits](https://developers.cloudflare.com/pages/platform/limits/), [Functions pricing](https://developers.cloudflare.com/pages/functions/pricing/), [Workers limits](https://developers.cloudflare.com/workers/platform/limits/), [R2 pricing](https://developers.cloudflare.com/r2/pricing/).
 
 ## Build, test and deploy
 
@@ -369,7 +390,7 @@ flowchart LR
 
 - **Access in e2e:** `playwright.config.ts` generates a throwaway RSA key each run, and `e2e/access-token.ts` signs short-lived tokens with it, so the real verification path is exercised.
 - **Browsers:** a desktop project runs every spec and a phone project runs the chair, share and polish specs. `capture-furnished.spec.ts` skips itself unless asked to measure or take pictures. Both use software WebGL, so no GPU is needed: SwiftShader by default, or the ANGLE backend named by `E2E_ANGLE`.
-- **CI** (`.github/workflows/ci.yml`) runs build, unit tests and e2e on pushes to `main` and on pull requests. Its e2e step installs Mesa and sets `E2E_ANGLE=gl-egl` to render with llvmpipe, because SwiftShader with two workers overloads the runner until tests time out.
+- **CI** (`.github/workflows/ci.yml`) runs build, unit tests and e2e on pushes to `main` and on pull requests. Its e2e step installs Mesa and sets `E2E_ANGLE=gl-egl` to render with llvmpipe, because SwiftShader with two workers overloads the runner until tests time out. A separate workflow (`.github/workflows/pr-description.yml`) fails a PR whose description has no `System design:` line.
 - **Deploys** use Pages' Git integration: `main` goes to production (`whimsy-forge-cze.pages.dev`), and other branches go to Access-restricted previews (`<branch>.whimsy-forge-cze.pages.dev`).
 - **Scripts** are TypeScript run directly by Node 22.18+ with type stripping, and type-checked by `tsconfig.node.json`. `scripts/seed-r2.mjs` uses `wrangler r2 bulk put`, grouped by content type, to keep the e2e server's start within its timeout.
 - **Local development:** see [README.md](../README.md#development). `npm run dev:pages` is the whole stack; `npm run dev` adds hot reload and proxies `/api` to it.
@@ -380,7 +401,7 @@ flowchart LR
 | --- | --- | --- |
 | Designs written by the old save check remain in the production bucket, shown as unnamed | Small; delete them from the list | Owner, once |
 | A draft of a design deleted from another browser stays in this browser's storage, and can recreate the design if this browser opens its address | One owner, usually one browser | Not planned |
-| `/` shows the M0 chair page | Nothing else needs that address yet | Not planned yet |
+| `/` shows the chair demo page | Nothing else needs that address yet | Not planned yet |
 | A share link can't be revoked from the app, and snapshots are never deleted, even with their design | Links are unguessable, and each snapshot is small. To revoke one, delete its two objects in the R2 dashboard; a browser that has it may keep it for up to a day | Not planned yet |
 | A snapshot freezes the document, not the assets it refers to. Replacing an asset at the same key or removing it from the catalog changes what old links show | Assets rarely change, and a missing one shows as a box of the right size | Use a new asset ID instead of `--replace` |
 | A failed Share can leave an unused preview image in storage | Small and unreachable without its random ID | Not planned |
@@ -388,23 +409,22 @@ flowchart LR
 | An import from a stale checkout overwrites the bucket's `catalog.json` with that checkout's list | One owner, one machine; `seed/` is committed after each import | Not planned |
 | `seed/` holds finished binaries in git | Small so far, and it lets e2e and `seed:remote` run with no other source | Move out of git if it grows large |
 | At 1280 px wide with the catalog open, the plan's status line truncates (full text in its tooltip) | The header's Catalog button gives the width back | Revisit with the editor's panels |
-| A photo is placed once from its upload; there is no library, so placing it again needs a new upload | Keeps M4 to the placement workflow | Not planned yet |
+| A photo is placed once from its upload; there is no library, so placing it again needs a new upload | Keeps placement simple | Not planned yet |
 | Uploads are never deleted, even when no item uses them any more | Storage is small, and deletion needs a reference check | Not planned yet |
 | The undo history is lost on reload | The design itself is safe; history is only for the session | Not planned |
-| The 30 fps target hasn't been measured on a real mid-range phone | Budgets are enforced in e2e and the viewer steps down if it's slow, but neither is the phone itself | Owner: open `/v/<id>?stats` on a phone |
 | Lamps cast no shadows, and their light passes through walls | A shadow per lamp is too costly on a phone, and a room's lamps are mostly in that room | Not planned |
 | Lamps have no on/off or dimmer, and only the first few give light | Keeps the Design schema unchanged | Not planned yet |
-| A ceiling item placed before M7 stays on the floor until the room is next edited | M4's placement put it there; `followWalls` corrects it on the next room edit, but a snapshot stays as it was | Not planned |
+| A ceiling item placed by an older build stays on the floor until the room is next edited | Older placement put it there; `followWalls` corrects it on the next room edit, but a snapshot stays as it was | Not planned |
 | A phone's saved image uses its smaller model textures | Export from a desktop for the best picture | Not planned |
 
 ## Planned architecture
 
-**Not built.** These notes record what the current architecture implies for coming milestones. They aren't decisions: the milestone's agent decides, then moves the result into the as-built sections above.
+**Not built.** These notes record what the current architecture implies for coming features, which are tracked in [GitHub Issues](https://github.com/davidopluslau/whimsy-forge/issues) and [feature briefs](features/). They aren't decisions: the agent building the feature decides, then moves the result into the as-built sections above.
 
-None at the moment: every milestone in [PLAN.md](PLAN.md) has been built.
+- **Asset capture** ([brief](features/asset-capture.md), a draft): turns product pictures and photos into catalog assets. It would end in the existing import pipeline, with generation outside Functions. It collides with three things above: provenance requires an http(s) `sourceUrl`, fitting is uniform along one axis, and everything imported is publicly readable.
 
 ## Open design questions
 
-Gaps between [PLAN.md](PLAN.md) and the architecture as built. Remove each one when it is decided, and record the outcome above.
+Gaps between what's planned and the architecture as built. Remove each one when it is decided, and record the outcome above.
 
-None at the moment.
+- Where do personal assets live, and who can read them? See the [asset capture brief](features/asset-capture.md#open-questions).

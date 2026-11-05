@@ -1,6 +1,6 @@
 # Cloudflare setup checklist
 
-These steps need your Cloudflare account. The code is ready for them; nothing here costs money on the free tiers listed in [PLAN.md](../PLAN.md#cloudflare-free-tier-limits). Dashboard menu names were taken from Cloudflare's docs on 2026-11-04 and may differ slightly.
+These steps need your Cloudflare account. The code is ready for them; nothing here costs money on the free tiers listed in [SYSTEM_DESIGN.md](../SYSTEM_DESIGN.md#cloudflare-free-tier-limits). Dashboard menu names were taken from Cloudflare's docs on 2026-11-04 and may differ slightly.
 
 Work through them in order.
 
@@ -12,7 +12,7 @@ Cloudflare may ask you to add a payment method before enabling R2, even for free
 
 ## 2. Upload the chair
 
-From a checkout of this branch:
+From a checkout of `main`:
 
 ```sh
 npm ci
@@ -38,7 +38,7 @@ Don't use **Continue with GitHub** at the top of that page: it creates a Worker,
 
 `pages.dev` names are global, so the form may show a suffixed hostname. This project's is **`whimsy-forge-cze.pages.dev`**, because `whimsy-forge.pages.dev` belongs to someone else; the steps below use it.
 
-Pushes to `main` then deploy to production, and pushes to other branches get preview URLs (`<branch>.whimsy-forge-cze.pages.dev`). The first build of `main` fails harmlessly until this PR is merged, because `main` has no app yet.
+Pushes to `main` then deploy to production, and pushes to other branches get preview URLs (`<branch>.whimsy-forge-cze.pages.dev`).
 
 `wrangler.toml` is the source of truth for this project, so the R2 binding and variables come from that file and show as read-only in the dashboard. Deploys fail if the bucket from step 1 doesn't exist.
 
@@ -76,7 +76,7 @@ It creates a separate Access application (**whimsy-forge - Cloudflare Pages**) c
 
 That AUD is `ACCESS_PREVIEW_AUD` in `wrangler.toml`, which lets `/editor` open on preview URLs so a branch can be reviewed before merging. If you recreate the application, update the value. Previews still can't write, because that AUD isn't in `ACCESS_AUD`, so the editor on a preview shows **Not saved: signed out**. That's expected. Don't add it to `ACCESS_AUD`: previews share production's bucket.
 
-## 7. Verify the M0 acceptance criteria
+## 7. Verify the deployment
 
 Replace the host below if you use a different one.
 
@@ -96,7 +96,7 @@ curl -i -X PUT https://whimsy-forge-cze.pages.dev/api/designs/aaaaaaaaaaaaaaaaaa
 
 If the editor shows **Not saved: signed out** while you are signed in, check that the two values from step 5 are deployed and that **Cookie Path Attribute** is off.
 
-## 8. Verify sharing (M6)
+## 8. Verify sharing
 
 Sharing needs no dashboard changes: the Access application covers only `/editor`, so `/v/*` is public. Check these on production, because restricted previews put share links behind a login and can't create them.
 

@@ -1,0 +1,29 @@
+name: Feature
+description: Something the app should do that it can't do today
+labels: [enhancement, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: "This repository is public. Don't post photos of your home, personal details or keys. See docs/WORKFLOW.md for the routes an issue can take."
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Problem and outcome
+      description: Who wants what, and what they can do afterward.
+    validations:
+      required: true
+  - type: textarea
+    id: criteria
+    attributes:
+      label: Acceptance criteria
+      description: Checks a reviewer can run. Can wait until triage if the idea is still rough.
+      placeholder: "- [ ] "
+  - type: textarea
+    id: scope
+    attributes:
+      label: Out of scope
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Link a brief in docs/features/ if there is one, and any slices this needs first.

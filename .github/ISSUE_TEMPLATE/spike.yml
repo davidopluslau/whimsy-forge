@@ -1,0 +1,33 @@
+name: Spike
+description: A time-boxed question, when we don't know whether something works or which option is best
+labels: [spike, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: "This repository is public. Keep personal photos and keys out of the issue, its results and the branch."
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: One question that a result can answer.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence that would answer it
+      description: The fixed test set, the measures and the bar, chosen before looking at results.
+    validations:
+      required: true
+  - type: input
+    id: timebox
+    attributes:
+      label: Time box
+      placeholder: One session
+    validations:
+      required: true
+  - type: textarea
+    id: spending
+    attributes:
+      label: Spending limit and paid services
+      description: Any paid service or spending needs the owner's approval first.

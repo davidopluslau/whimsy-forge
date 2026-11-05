@@ -1,0 +1,23 @@
+name: PR description
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions: {}
+
+jobs:
+  system-design-line:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require the system design line
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if printf '%s\n' "$BODY" | grep -Eq '^System design: (updated \([^<>]+\)|no substantive change)[[:space:]]*$'; then
+            echo "Found the system design line."
+          else
+            echo "::error::Add 'System design: updated (<sections>)' or 'System design: no substantive change' to the PR description. See docs/SYSTEM_DESIGN.md, 'Keeping this document live'."
+            exit 1
+          fi
