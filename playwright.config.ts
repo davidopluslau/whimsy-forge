@@ -25,7 +25,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 2 : undefined,
   timeout: 60_000,
-  reporter: process.env.CI ? 'github' : 'list',
+  reporter: process.env.CI ? [['github'], ['list'], ['json', { outputFile: 'playwright-report.json' }]] : 'list',
   use: { baseURL: `http://localhost:${PORT}`, trace: 'on-first-retry' },
   projects: [
     { name: 'desktop', use: { ...devices['Desktop Chrome'], ...webgl } },
