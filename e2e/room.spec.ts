@@ -100,6 +100,24 @@ test('a typed length keeps the direction last pointed at after the mouse leaves 
   expect(Math.abs(dimension!.y + dimension!.height / 2 - at(0, -0.5).y)).toBeLessThan(5);
 });
 
+test('the plan does not shift or resize while drawing, even in a narrow window', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 700 });
+  const canvas = page.getByTestId('plan-canvas');
+  const at = await planMapper(page);
+  const before = await canvas.boundingBox();
+
+  await clickPlan(page, at, -2, -2);
+  expect(await canvas.boundingBox()).toEqual(before);
+  await clickPlan(page, at, 2, -2);
+  await clickPlan(page, at, 2, 2);
+  await expect(page.getByTestId('room-status')).toContainText('2 walls');
+  expect(await canvas.boundingBox()).toEqual(before);
+  await clickPlan(page, at, -2, 2);
+  await clickPlan(page, at, -2, -2);
+  await expect(page.getByTestId('room-status')).toContainText('Closed room');
+  expect(await canvas.boundingBox()).toEqual(before);
+});
+
 test('Backspace takes back the last wall while drawing', async ({ page }) => {
   const at = await planMapper(page);
   await clickPlan(page, at, -2, -2);

@@ -347,7 +347,7 @@ export function PlanEditor({ unit }: { unit: LengthUnit }) {
             </label>
             <p className="plan__hint">
               {anchor
-                ? 'Point the way, type a length and press Enter, or click the next corner. Click the first corner to close. Backspace undoes, Esc stops.'
+                ? 'Point, type a length and press Enter, or click the next corner. Click the first corner to close. Backspace undoes; Esc stops.'
                 : 'Click to place the first corner. Scroll to zoom; drag with the right button to pan.'}
             </p>
           </>

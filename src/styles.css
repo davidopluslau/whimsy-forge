@@ -236,29 +236,44 @@ a {
   height: 100%;
 }
 
+/* Fixed heights: the plan's origin follows the canvas center, so the canvas must not resize mid-draw. */
 .plan__bar {
   display: flex;
-  flex-wrap: wrap;
+  flex: none;
   align-items: center;
-  gap: 8px 16px;
-  min-height: 46px;
-  padding: 6px 12px;
+  gap: 16px;
+  height: 46px;
+  padding: 0 12px;
+  white-space: nowrap;
 }
 
 .plan__bar--bottom {
+  height: 64px;
   border-top: 1px solid var(--line);
 }
 
 .plan__status {
+  flex: 0 1 auto;
+  min-width: 0;
   margin: 0 0 0 auto;
+  overflow: hidden;
   font-weight: 600;
+  text-overflow: ellipsis;
 }
 
 .plan__hint {
+  display: -webkit-box;
   flex: 1;
-  min-width: 12rem;
+  min-width: 0;
   margin: 0;
+  overflow: hidden;
+  font-size: 0.8125rem;
+  line-height: 1.3;
   color: var(--muted);
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
 }
 
 .plan__canvas {
