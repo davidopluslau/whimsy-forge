@@ -15,9 +15,9 @@ A single-user web app for building 3D interior designs and sharing them as read-
 
 **In scope:** one editor (the owner), any number of read-only viewers, a personal furniture catalog, desktop editing, phone-friendly viewing.
 
-**Non-goals:** multi-user editing, real-time collaboration, photoreal ray-traced renders, buying furniture or linking out to shops, a public catalog for other users.
+**Non-goals:** multi-user editing, real-time collaboration, photoreal ray-traced renders, buying or selling through the app, a public catalog for other users.
 
-A shop's product page may be a *source* for a personal catalog asset ([asset capture](features/asset-capture.md)). Selling or buying through the app stays out of scope.
+A shop's product page may be a source for a personal catalog asset ([asset capture](features/asset-capture.md)). An asset sourced that way keeps a link to its product page, so the owner can get back to it.
 
 Changing a requirement or non-goal is a very consequential choice: the owner decides it, and this file records it.
 
@@ -25,6 +25,7 @@ Changing a requirement or non-goal is a very consequential choice: the owner dec
 
 - Recipients view without any account.
 - A share link is a frozen snapshot. It doesn't change when the design does.
+- Furniture sourced from a shop links to its product page.
 
 ## Open product questions
 

@@ -421,10 +421,10 @@ Sources: [Pages limits](https://developers.cloudflare.com/pages/platform/limits/
 
 **Not built.** These notes record what the current architecture implies for coming features, which are tracked in [GitHub Issues](https://github.com/davidopluslau/whimsy-forge/issues) and [feature briefs](features/). They aren't decisions: the agent building the feature decides, then moves the result into the as-built sections above.
 
-- **Asset capture** ([brief](features/asset-capture.md), a draft): turns product pictures and photos into catalog assets. It would end in the existing import pipeline, with generation outside Functions. It collides with three things above: provenance requires an http(s) `sourceUrl`, fitting is uniform along one axis, and everything imported is publicly readable.
+- **Asset capture** ([brief](features/asset-capture.md), a draft): turns product pictures and photos into catalog assets. It would end in the existing import pipeline, with generation outside Functions. It collides with three things above: provenance requires an http(s) `sourceUrl`, fitting is uniform along one axis, and everything imported is publicly readable. The owner has decided that personal assets go in an R2-only catalog, out of git, under unguessable IDs, and that models made from a shop's images stay out of share links at first. The details aren't designed yet.
 
 ## Open design questions
 
 Gaps between what's planned and the architecture as built. Remove each one when it is decided, and record the outcome above.
 
-- Where do personal assets live, and who can read them? See the [asset capture brief](features/asset-capture.md#open-questions).
+- How does the R2-only personal catalog work: how does the editor read it, and what does a share link's viewer load in place of a private asset? See the [asset capture brief](features/asset-capture.md#decisions).
