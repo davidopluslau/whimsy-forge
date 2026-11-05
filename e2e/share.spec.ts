@@ -58,7 +58,8 @@ async function settled(canvas: Locator): Promise<Buffer> {
 }
 
 async function openViewer(page: Page, id: string) {
-  await page.goto(`/v/${id}`);
+  // Pinned: on a slow test machine the viewer would lower its quality mid-test, which changes the picture.
+  await page.goto(`/v/${id}?quality=medium`);
   await expect(page.getByTestId('snapshot-viewer')).toHaveAttribute('data-catalog', 'ready');
   // The HDRI arrives after the scene first draws, and changes how everything looks.
   await page.waitForLoadState('networkidle');
@@ -268,8 +269,6 @@ test.describe('the read-only viewer', () => {
 
   test('orbits by touch or mouse, and camera presets move the view', async ({ page, request, isMobile }) => {
     const canvas = await openViewer(page, await storeSnapshot(request));
-    const tier = () => page.getByTestId('snapshot-viewer').getAttribute('data-quality');
-    console.log(`TIER-DIAG start ${await tier()} cores ${await page.evaluate(() => navigator.hardwareConcurrency)}`);
     const views = page.getByRole('group', { name: 'Camera views' });
     const overview = views.getByRole('button', { name: 'Overview' });
     await expect(overview).toHaveAttribute('aria-pressed', 'true');
@@ -296,9 +295,7 @@ test.describe('the read-only viewer', () => {
     const moved = await settled(canvas);
     expect(await changedShare(start, moved)).toBeGreaterThan(0.01);
     await overview.click();
-    const back = await settled(canvas);
-    console.log(`TIER-DIAG end ${await tier()} changed ${await changedShare(start, back)}`);
-    expect(await changedShare(start, back)).toBeLessThan(0.01);
+    expect(await changedShare(start, await settled(canvas))).toBeLessThan(0.01);
   });
 
   test('opens at the view it was shared from', async ({ page, request }) => {

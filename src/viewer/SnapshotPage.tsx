@@ -116,7 +116,7 @@ function SnapshotScene({ design }: { design: Design }) {
   }
 
   return (
-    <main className="viewer" data-testid="snapshot-viewer" data-item-count={design.items.length} data-catalog={catalog.status} data-quality={quality.name}>
+    <main className="viewer" data-testid="snapshot-viewer" data-item-count={design.items.length} data-catalog={catalog.status}>
       <SceneErrorBoundary onError={onSceneError}>
         <RoomScene
           room={design.room}

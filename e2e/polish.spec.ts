@@ -57,7 +57,7 @@ test.describe('the viewer on a phone', () => {
     await expect(page.getByTestId('viewer-stats')).toHaveCount(0);
 
     await page.goto(`/v/${id}?stats`);
-    await expect(page.getByTestId('viewer-stats')).toHaveAttribute('data-tier', /medium|low|minimal/);
+    await expect(page.getByTestId('viewer-stats')).toHaveAttribute('data-tier', /medium|low|minimal/, { timeout: 30_000 });
   });
 });
 

@@ -3,20 +3,44 @@ import { useEffect, useMemo, useRef } from 'react';
 import { FrameBudget } from './quality';
 import { sceneTextureMegabytes } from './textureBudget';
 
-/** Calls `onSlow` when frames stay too slow while the scene moves. It starts over after each change of `tierName`. */
+/** How long after the scene last drew the browser's pace still says something about the scene. */
+const ACTIVE_MS = 150;
+
+/**
+ * Calls `onSlow` when the browser can't keep up while the scene draws. It starts over after each change of
+ * `tierName`. It times the browser's animation frames, not the scene's draws: the scene only draws on change,
+ * so a slow finger on a fast phone also means long gaps between draws, while the browser's pace falls only
+ * when the device really is behind.
+ */
 export function FrameWatcher({ tierName, onSlow }: { tierName: string; onSlow: () => void }) {
   const budget = useMemo(() => new FrameBudget(), []);
-  const last = useRef<number | null>(null);
+  const lastDraw = useRef(0);
+  const running = useRef(false);
+  const latestOnSlow = useRef(onSlow);
+  latestOnSlow.current = onSlow;
 
-  useEffect(() => {
-    budget.reset();
-    last.current = null;
-  }, [budget, tierName]);
+  useEffect(() => budget.reset(), [budget, tierName]);
+  useEffect(
+    () => () => {
+      running.current = false;
+    },
+    [],
+  );
 
   useFrame(() => {
-    const now = performance.now();
-    if (last.current !== null && budget.record(now - last.current)) onSlow();
-    last.current = now;
+    lastDraw.current = performance.now();
+    if (running.current) return;
+    running.current = true;
+    let previous = lastDraw.current;
+    const tick = () => {
+      if (!running.current) return;
+      const now = performance.now();
+      if (budget.record(now - previous)) latestOnSlow.current();
+      previous = now;
+      if (now - lastDraw.current > ACTIVE_MS) running.current = false;
+      else requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
   });
   return null;
 }

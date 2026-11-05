@@ -57,7 +57,7 @@ const IDLE_GAP_MS = 1000;
 const WINDOW = 30;
 
 /**
- * Watches the time between frames while the scene is moving, and says when to lower the quality. It takes
+ * Watches the time between animation frames while the scene is drawing, and says when to lower the quality. It takes
  * the median of a window, so one hitch (a shader compiling, a texture arriving) doesn't count against a
  * device that otherwise keeps up.
  */
