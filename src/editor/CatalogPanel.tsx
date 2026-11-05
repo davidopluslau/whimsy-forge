@@ -7,6 +7,9 @@ import { ASSET_DRAG_TYPE } from './drag';
 import { PhotoForm } from './PhotoForm';
 import type { PhotoUpload } from './photo';
 
+/** The search box's id, for the shortcut that jumps to it. */
+export const CATALOG_SEARCH_ID = 'catalog-search';
+
 function formatSize(meters: readonly number[], unit: LengthUnit) {
   return meters.map((side) => formatLength(side, unit)).join(' × ');
 }
@@ -103,10 +106,12 @@ export function CatalogPanel({ unit, catalog, retry, onPlace, onAddPhoto }: Cata
   return (
     <aside className="catalog" aria-label="Catalog" data-testid="catalog" data-status={catalog.status}>
       <input
+        id={CATALOG_SEARCH_ID}
         type="search"
         className="catalog__search"
         placeholder="Search furniture"
         aria-label="Search furniture"
+        aria-keyshortcuts="/"
         value={query}
         onChange={(event) => setQuery(event.target.value)}
       />

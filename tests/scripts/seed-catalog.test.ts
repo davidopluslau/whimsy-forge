@@ -66,8 +66,28 @@ describe('the seed catalog', () => {
     }
   });
 
-  it('keeps every non-material entry valid, so none disappears from the panel', () => {
-    expect(assets.length).toBe(rawCatalog.filter((entry) => entry.kind !== 'material').length);
+  it('keeps every placeable entry valid, so none disappears from the panel', () => {
+    expect(assets.length).toBe(rawCatalog.filter((entry) => entry.kind !== 'material' && entry.kind !== 'environment').length);
+  });
+
+  it('gives light from every lamp, with the bulb inside the lamp', () => {
+    for (const lamp of models.filter((asset) => asset.category === 'lamp')) {
+      expect(lamp.light, lamp.id).toBeDefined();
+      const [x, y, z] = lamp.light!.position;
+      const [width, height, depth] = lamp.dimensions;
+      expect(Math.abs(x), lamp.id).toBeLessThanOrEqual(width / 2);
+      expect(y, lamp.id).toBeGreaterThanOrEqual(0);
+      expect(y, lamp.id).toBeLessThanOrEqual(height);
+      expect(Math.abs(z), lamp.id).toBeLessThanOrEqual(depth / 2);
+    }
+  });
+
+  it('has an environment that is a small enough HDRI, in the file the entry names', () => {
+    const environments = rawCatalog.filter((entry) => entry.kind === 'environment');
+    expect(environments).toHaveLength(1);
+    const bytes = readFileSync(join(seedDir, String(environments[0]!.url)));
+    expect(bytes.subarray(0, 10).toString('latin1')).toBe('#?RADIANCE');
+    expect(bytes.byteLength).toBeLessThan(2 * 1024 * 1024);
   });
 
   it('is stored in the format the import script writes', () => {

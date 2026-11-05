@@ -1,5 +1,5 @@
 import type { Item, Room, Vec2, Vec3, Wall } from './design';
-import type { CatalogAsset } from './catalog';
+import type { CatalogAsset, LampLight } from './catalog';
 import { distanceAlongWall, wallFaces, wallPoint } from './openings';
 import { nearestWall, wallFootprints, wallLength } from './room';
 
@@ -73,15 +73,20 @@ export function polygonsOverlap(a: Vec2[], b: Vec2[]): boolean {
   return true;
 }
 
-/** The ids of every item whose footprint overlaps another's. Callers choose which items count. */
+/** Whether two items share any height. A lamp standing on a table is above it, not in it. */
+function heightsOverlap(a: Item, b: Item): boolean {
+  return a.position[1] + a.size[1] > b.position[1] + OVERLAP_EPSILON && b.position[1] + b.size[1] > a.position[1] + OVERLAP_EPSILON;
+}
+
+/** The ids of every item that overlaps another, in plan and in height. Callers choose which items count. */
 export function overlappingItemIds(items: readonly Item[]): Set<string> {
-  const shapes = items.map((item) => ({ id: item.id, shape: footprint(item) }));
+  const shapes = items.map((item) => ({ item, shape: footprint(item) }));
   const ids = new Set<string>();
   for (let i = 0; i < shapes.length; i++) {
     for (let j = i + 1; j < shapes.length; j++) {
-      if (polygonsOverlap(shapes[i]!.shape, shapes[j]!.shape)) {
-        ids.add(shapes[i]!.id);
-        ids.add(shapes[j]!.id);
+      if (heightsOverlap(shapes[i]!.item, shapes[j]!.item) && polygonsOverlap(shapes[i]!.shape, shapes[j]!.shape)) {
+        ids.add(shapes[i]!.item.id);
+        ids.add(shapes[j]!.item.id);
       }
     }
   }
@@ -118,17 +123,30 @@ export function placeOnWall(room: Room, wallId: string, point: Vec2, size: Vec3,
   return { wallId, position: [center[0], y, center[1]], rotationY: Math.atan2(facingDirection[0], facingDirection[1]) };
 }
 
+/** Where a ceiling item's bottom goes: it hangs from the top of the walls, or stands on the floor if it's taller than they are. */
+const ceilingBottom = (room: Room, size: Vec3) => Math.max(0, room.wallHeight - size[1]);
+
 /** The unit direction a wall runs in, from its start to its end. */
 function wallDirection(wall: Wall): Vec2 {
   const length = wallLength(wall);
   return length === 0 ? [1, 0] : [(wall.end[0] - wall.start[0]) / length, (wall.end[1] - wall.start[1]) / length];
 }
 
-/** Keeps wall items on their walls after a room edit. Items whose wall was removed are dropped. */
+/** Keeps wall items on their walls and ceiling items at the ceiling after a room edit. Items whose wall was removed are dropped. */
 export function followWalls(room: Room, items: Item[]): Item[] {
   let changed = false;
   const next: Item[] = [];
   for (const item of items) {
+    if (item.mount === 'ceiling') {
+      const bottom = ceilingBottom(room, item.size);
+      if (bottom === item.position[1]) {
+        next.push(item);
+      } else {
+        changed = true;
+        next.push({ ...item, position: [item.position[0], bottom, item.position[2]] });
+      }
+      continue;
+    }
     if (item.mount !== 'wall' || item.wallId === undefined) {
       next.push(item);
       continue;
@@ -164,6 +182,16 @@ export function nudgeItem(room: Room, item: Item, dx: number, dz: number): Item 
   const center: Vec2 = [item.position[0], item.position[2]];
   const placed = placeOnWall(room, item.wallId, [center[0] + along0 * step, center[1] + along1 * step], item.size, item.position[1], facing);
   return placed ? { ...item, ...placed } : item;
+}
+
+/**
+ * Sets the height of an item's bottom above the floor, such as a lamp on a table or a picture on its wall.
+ * It stays between the floor and the top of the walls. A ceiling item stays hung from the ceiling.
+ */
+export function setItemHeight(room: Room, item: Item, height: number): Item {
+  if (item.mount === 'ceiling') return item;
+  const bottom = clamp(height, 0, room.wallHeight - item.size[1]);
+  return { ...item, position: [item.position[0], bottom, item.position[2]] };
 }
 
 /** A copy beside the original: on the floor, offset diagonally; on a wall, next along it. */
@@ -217,6 +245,36 @@ export function pointInPolygon(point: Vec2, polygon: Vec2[]): boolean {
   return true;
 }
 
+/** A lamp's light in the room: world position, plus the color and strength from its catalog entry. */
+export type PlacedLight = Omit<LampLight, 'position'> & { itemId: string; position: Vec3 };
+
+/**
+ * The lights the room's lamps give, in the order they were placed. Every light costs shader time on every
+ * surface, so only the first `limit` give light. Order is what keeps the choice steady as things move.
+ */
+export function lampLights(items: readonly Item[], catalog: ReadonlyMap<string, CatalogAsset>, limit: number): PlacedLight[] {
+  const lights: PlacedLight[] = [];
+  for (const item of items) {
+    if (lights.length >= limit) break;
+    const light = catalog.get(item.assetId)?.light;
+    if (!light) continue;
+    const sin = Math.sin(item.rotationY);
+    const cos = Math.cos(item.rotationY);
+    const [x, y, z] = light.position;
+    lights.push({
+      itemId: item.id,
+      color: light.color,
+      intensity: light.intensity,
+      distance: light.distance,
+      position: [item.position[0] + x * cos + z * sin, item.position[1] + y, item.position[2] - x * sin + z * cos],
+    });
+  }
+  return lights;
+}
+
+/** How many of these items are lamps, whether or not they fit under the limit on lights. */
+export const lampCount = (items: readonly Item[], catalog: ReadonlyMap<string, CatalogAsset>) => items.filter((item) => catalog.get(item.assetId)?.light).length;
+
 /** What to draw for an item: a model file, or an image for a picture or a rug. Null while its catalog entry is loading. */
 export type ItemImage = { kind: 'model' | 'picture' | 'rug'; path: string };
 
@@ -229,8 +287,8 @@ export function itemImage(item: Pick<Item, 'assetId' | 'mount'>, catalog: Readon
 
 /**
  * A new item for a draft, placed where it was dropped. A wall item goes on the wall nearest the point,
- * or the longest wall when there is no point. A floor item goes on the point, or the middle of the room.
- * Null when a wall item has no wall to go on.
+ * or the longest wall when there is no point. A floor item goes on the point, or the middle of the room,
+ * and a ceiling item hangs from the ceiling above it. Null when a wall item has no wall to go on.
  */
 export function newItem(room: Room, draft: Pick<Item, 'id' | 'assetId' | 'mount' | 'size'>, point: Vec2 | null): Item | null {
   if (draft.mount === 'wall') {
@@ -239,5 +297,9 @@ export function newItem(room: Room, draft: Pick<Item, 'id' | 'assetId' | 'mount'
     const placed = placeOnWall(room, wall.id, point ?? midpoint(wall), draft.size, PICTURE_BOTTOM, null);
     return placed ? { ...draft, ...placed } : null;
   }
-  return { ...draft, ...placeOnFloor(point ?? roomCenter(room)), rotationY: 0 };
+  const onFloor = placeOnFloor(point ?? roomCenter(room));
+  if (draft.mount === 'ceiling') {
+    return { ...draft, position: [onFloor.position[0], ceilingBottom(room, draft.size), onFloor.position[2]], rotationY: 0 };
+  }
+  return { ...draft, ...onFloor, rotationY: 0 };
 }

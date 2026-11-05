@@ -2,7 +2,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join } from 'node:path';
 import sharp from 'sharp';
-import { type CatalogAsset, type Category, isCatalogAsset, isHttpUrl, type Mount } from '../../src/model/catalog.ts';
+import { type CatalogAsset, type Category, isCatalogAsset, isHttpUrl, type LampLight, type Mount } from '../../src/model/catalog.ts';
 import { type ModelOptions, processModel } from './model.ts';
 import { THUMBNAIL_SIZE, type ThumbnailRenderer } from './thumbnail.ts';
 
@@ -28,6 +28,8 @@ export type ImportRequest = {
   model?: ModelOptions;
   /** For an image: required real-world width in meters. */
   imageWidth?: number;
+  /** For a model that gives light. */
+  light?: LampLight;
 };
 
 export type ImportResult = {
@@ -133,6 +135,7 @@ export async function importAsset(request: ImportRequest, seedDir: string, thumb
     dimensions,
     license: request.license,
     sourceUrl: request.sourceUrl,
+    ...(request.light ? { light: request.light } : {}),
   };
   if (!isCatalogAsset(asset)) throw new Error(`The entry for "${id}" isn't valid: ${JSON.stringify(asset)}`);
 

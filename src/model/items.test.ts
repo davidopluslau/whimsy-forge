@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { CatalogAsset } from './catalog';
 import type { Item, Room, Vec2 } from './design';
 import * as items from './items';
 import * as room from './room';
@@ -163,5 +164,107 @@ describe('photo ids', () => {
     expect(items.uploadIdOf(asset)).toBe('AbCdEfGhIjKlMnOpQrSt_-');
     expect(items.uploadIdOf('chair-1')).toBeNull();
     expect(items.uploadPath('AbCdEfGhIjKlMnOpQrSt_-')).toBe('assets/uploads/AbCdEfGhIjKlMnOpQrSt_-.webp');
+  });
+});
+
+describe('ceiling items', () => {
+  const lamp = { id: 'lamp', assetId: 'a', mount: 'ceiling' as const, size: [0.4, 0.9, 0.4] as [number, number, number] };
+
+  it('hang from the top of the walls when placed', () => {
+    const placed = items.newItem(rectangle(), lamp, [1, 2])!;
+    close(placed.position, [1, 1.6, 2]);
+  });
+
+  it('follow the ceiling when the wall height changes', () => {
+    const before = rectangle();
+    const placed = items.newItem(before, lamp, [1, 2])!;
+    const [moved] = items.followWalls(room.setWallHeight(before, 3), [placed]);
+    close(moved!.position, [1, 2.1, 2]);
+  });
+
+  it('stand on the floor when taller than the walls, rather than go through it', () => {
+    const placed = items.newItem(rectangle(), { ...lamp, size: [0.4, 3, 0.4] }, [1, 2])!;
+    expect(placed.position[1]).toBe(0);
+  });
+
+  it('are left alone when already in place', () => {
+    const before = rectangle();
+    const list = [items.newItem(before, lamp, [1, 2])!];
+    expect(items.followWalls(before, list)).toBe(list);
+  });
+});
+
+describe('setItemHeight', () => {
+  it('lifts a floor item, such as a lamp onto a table', () => {
+    close(items.setItemHeight(rectangle(), item(), 0.55).position, [1, 0.55, 1]);
+  });
+
+  it('stays between the floor and the top of the walls', () => {
+    expect(items.setItemHeight(rectangle(), item(), -1).position[1]).toBe(0);
+    expect(items.setItemHeight(rectangle(), item({ size: [1, 1, 1] }), 9).position[1]).toBe(1.5);
+  });
+
+  it('moves a picture up its wall', () => {
+    expect(items.setItemHeight(rectangle(), item({ mount: 'wall', wallId: 'w0', size: [1, 0.5, 0.03] }), 1.6).position[1]).toBe(1.6);
+  });
+
+  it('leaves a ceiling item hanging', () => {
+    const hanging = item({ mount: 'ceiling', position: [1, 1.6, 1] });
+    expect(items.setItemHeight(rectangle(), hanging, 0.5)).toBe(hanging);
+  });
+});
+
+describe('overlappingItemIds with height', () => {
+  it('does not flag a lamp standing on a table', () => {
+    const table = item({ id: 'table', size: [1, 0.55, 1] });
+    const lamp = item({ id: 'lamp', position: [1, 0.55, 1], size: [0.2, 0.9, 0.2] });
+    expect(items.overlappingItemIds([table, lamp]).size).toBe(0);
+  });
+
+  it('flags a lamp sunk into a table', () => {
+    const table = item({ id: 'table', size: [1, 0.55, 1] });
+    const lamp = item({ id: 'lamp', position: [1, 0.3, 1], size: [0.2, 0.9, 0.2] });
+    expect(items.overlappingItemIds([table, lamp]).size).toBe(2);
+  });
+});
+
+describe('lampLights', () => {
+  const asset = (id: string, light?: CatalogAsset['light']): CatalogAsset => ({
+    id,
+    name: id,
+    kind: 'model',
+    category: 'lamp',
+    tags: [],
+    mount: 'floor',
+    url: 'assets/x/model.glb',
+    thumbnailUrl: 'assets/x/thumbnail.webp',
+    dimensions: [1, 1, 1],
+    license: 'CC0 1.0',
+    sourceUrl: 'https://example.com/',
+    ...(light ? { light } : {}),
+  });
+  const light = { position: [0.1, 0.8, 0.2] as [number, number, number], color: '#ffffff', intensity: 2, distance: 5 };
+  const catalog = new Map([asset('lamp', light), asset('sofa')].map((entry) => [entry.id, entry]));
+
+  it('puts the bulb where the lamp stands', () => {
+    const [placed] = items.lampLights([item({ id: 'one', assetId: 'lamp', position: [1, 0.5, 2] })], catalog, 4);
+    close(placed!.position, [1.1, 1.3, 2.2]);
+    expect(placed).toMatchObject({ itemId: 'one', color: '#ffffff', intensity: 2, distance: 5 });
+  });
+
+  it('turns the bulb with the lamp, the way the model turns', () => {
+    // A quarter turn takes the front, +z, to +x, and +x to -z.
+    const [placed] = items.lampLights([item({ assetId: 'lamp', position: [0, 0, 0], rotationY: Math.PI / 2 })], catalog, 4);
+    close(placed!.position, [0.2, 0.8, -0.1]);
+  });
+
+  it('skips what gives no light and what the catalog does not know', () => {
+    expect(items.lampLights([item({ assetId: 'sofa' }), item({ assetId: 'gone' })], catalog, 4)).toEqual([]);
+  });
+
+  it('lights only the first lamps up to the limit, and counts them all', () => {
+    const list = ['a', 'b', 'c'].map((id) => item({ id, assetId: 'lamp' }));
+    expect(items.lampLights(list, catalog, 2).map((placed) => placed.itemId)).toEqual(['a', 'b']);
+    expect(items.lampCount(list, catalog)).toBe(3);
   });
 });

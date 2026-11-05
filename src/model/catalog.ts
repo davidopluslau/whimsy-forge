@@ -28,6 +28,17 @@ export type AssetKind = (typeof ASSET_KINDS)[number];
 export const MOUNTS = ['floor', 'wall', 'ceiling'] as const;
 export type Mount = (typeof MOUNTS)[number];
 
+/** The light a lamp gives. It has no shadow, so that any number of frames stay cheap on a phone. */
+export type LampLight = {
+  /** Where the bulb is in meters, from the model's pivot, with its front toward +z. */
+  position: [number, number, number];
+  color: string;
+  /** Candela, as three.js point lights take it. */
+  intensity: number;
+  /** The light fades to nothing this many meters away. */
+  distance: number;
+};
+
 export type CatalogAsset = {
   id: string;
   name: string;
@@ -44,6 +55,8 @@ export type CatalogAsset = {
   dimensions: [number, number, number];
   license: string;
   sourceUrl: string;
+  /** Present on a model that gives light. */
+  light?: LampLight;
 };
 
 const isNonEmptyString = (value: unknown): value is string => typeof value === 'string' && value.trim() !== '';
@@ -63,6 +76,22 @@ export function isHttpUrl(value: unknown): value is string {
 /** A catalog path must stay under `assets/`, which is all the asset route serves. */
 const isAssetPath = (value: unknown) => isNonEmptyString(value) && value.startsWith('assets/') && !value.split('/').includes('..');
 
+const isPositiveNumber = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value > 0;
+
+function isLampLight(value: unknown): value is LampLight {
+  if (typeof value !== 'object' || value === null) return false;
+  const light = value as Partial<Record<keyof LampLight, unknown>>;
+  return (
+    Array.isArray(light.position) &&
+    light.position.length === 3 &&
+    light.position.every((part) => typeof part === 'number' && Number.isFinite(part)) &&
+    typeof light.color === 'string' &&
+    /^#[0-9a-f]{6}$/i.test(light.color) &&
+    isPositiveNumber(light.intensity) &&
+    isPositiveNumber(light.distance)
+  );
+}
+
 export function isCatalogAsset(value: unknown): value is CatalogAsset {
   if (typeof value !== 'object' || value === null) return false;
   const asset = value as Partial<Record<keyof CatalogAsset, unknown>>;
@@ -80,7 +109,8 @@ export function isCatalogAsset(value: unknown): value is CatalogAsset {
     asset.dimensions.length === 3 &&
     asset.dimensions.every((size) => typeof size === 'number' && Number.isFinite(size) && size >= 0) &&
     isNonEmptyString(asset.license) &&
-    isHttpUrl(asset.sourceUrl)
+    isHttpUrl(asset.sourceUrl) &&
+    (asset.light === undefined || isLampLight(asset.light))
   );
 }
 

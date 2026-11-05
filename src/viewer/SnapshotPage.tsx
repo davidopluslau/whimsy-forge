@@ -8,6 +8,8 @@ import { isDesignId } from '../model/ids';
 import { NewerSchemaError, parseDesign, UnreadableDesignError } from '../model/migrate';
 import { viewPresets, type ViewPreset } from '../scene/cameraViews';
 import { imageFileName, saveBlob, type SceneCapture, viewImage } from '../scene/capture';
+import type { SceneStats } from '../scene/performance';
+import { type DeviceHints, lowerTier, type QualityTier, startingTier, tierNamed } from '../scene/quality';
 import { buildRoomGeometry } from '../scene/roomGeometry';
 import { RoomScene, type ViewRequest } from '../scene/RoomScene';
 import { SceneErrorBoundary } from './SceneErrorBoundary';
@@ -29,6 +31,33 @@ function outcomeOf(error: unknown): Load {
   return { kind: 'failed' };
 }
 
+function deviceHints(): DeviceHints {
+  const { deviceMemory, hardwareConcurrency } = navigator as Navigator & { deviceMemory?: number };
+  return { touch: window.matchMedia('(pointer: coarse)').matches, memory: deviceMemory, cores: hardwareConcurrency };
+}
+
+/** A key in the viewer that chooses a camera view, for each view by its place in the list. */
+const viewKey = (index: number) => String(index + 1);
+
+function StatsPanel({ stats, quality }: { stats: SceneStats | null; quality: QualityTier }) {
+  return (
+    <p
+      className="viewer__panel viewer__stats"
+      data-testid="viewer-stats"
+      data-tier={quality.name}
+      data-fps={stats?.fps}
+      data-draw-calls={stats?.drawCalls}
+      data-triangles={stats?.triangles}
+      data-texture-mb={stats?.textureMegabytes}
+      data-pixels={stats?.pixels.join('x')}
+    >
+      {stats
+        ? `${stats.fps} fps · ${stats.drawCalls} draws · ${Math.round(stats.triangles / 1000)}k tris · ${stats.textureMegabytes} MB textures · ${stats.pixels.join('×')} · ${quality.name}`
+        : `Measuring · ${quality.name}`}
+    </p>
+  );
+}
+
 function SnapshotScene({ design }: { design: Design }) {
   const { catalog } = useCatalog();
   const catalogById = useMemo(() => new Map<string, CatalogAsset>(catalog.status === 'ready' ? catalog.assets.map((asset) => [asset.id, asset]) : []), [catalog]);
@@ -41,12 +70,30 @@ function SnapshotScene({ design }: { design: Design }) {
   const [exportFailed, setExportFailed] = useState(false);
   const capture = useRef<SceneCapture | null>(null);
 
+  // `?quality=low` pins a tier and `?stats` shows what frames cost, to check a real phone against the budget.
+  const params = useMemo(() => new URLSearchParams(window.location.search), []);
+  const pinnedQuality = useMemo(() => tierNamed(params.get('quality')), [params]);
+  const [quality, setQuality] = useState<QualityTier>(() => pinnedQuality ?? startingTier(deviceHints()));
+  const [stats, setStats] = useState<SceneStats | null>(null);
+  const showStats = params.has('stats');
+  const onSlowFrames = useCallback(() => setQuality((current) => lowerTier(current) ?? current), []);
+
   const goTo = (preset: ViewPreset) => {
     setRequest({ view: preset.view });
     setActiveView(preset.name);
   };
   const onSceneError = useCallback(() => setSceneFailed(true), []);
   const onOrbitStart = useCallback(() => setActiveView(null), []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      const preset = presets.find((_, index) => viewKey(index) === event.key);
+      if (preset) goTo(preset);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [presets]);
 
   async function exportImage() {
     if (!capture.current) return;
@@ -71,13 +118,25 @@ function SnapshotScene({ design }: { design: Design }) {
   return (
     <main className="viewer" data-testid="snapshot-viewer" data-item-count={design.items.length} data-catalog={catalog.status}>
       <SceneErrorBoundary onError={onSceneError}>
-        <RoomScene room={design.room} items={design.items} catalog={catalogById} viewRequest={request} onOrbitStart={onOrbitStart} capture={capture} />
+        <RoomScene
+          room={design.room}
+          items={design.items}
+          catalog={catalogById}
+          viewRequest={request}
+          onOrbitStart={onOrbitStart}
+          capture={capture}
+          quality={quality}
+          onSlowFrames={pinnedQuality ? undefined : onSlowFrames}
+          onStats={showStats ? setStats : undefined}
+          label={`3D view of ${design.name}. Drag to look around, or use the camera view buttons.`}
+        />
       </SceneErrorBoundary>
       <h1 className="viewer__name viewer__panel">{design.name}</h1>
+      {showStats && <StatsPanel stats={stats} quality={quality} />}
       <div className="viewer__controls">
         <div className="segmented viewer__panel" role="group" aria-label="Camera views">
-          {presets.map((preset) => (
-            <button key={preset.name} type="button" aria-pressed={activeView === preset.name} onClick={() => goTo(preset)}>
+          {presets.map((preset, index) => (
+            <button key={preset.name} type="button" aria-pressed={activeView === preset.name} aria-keyshortcuts={viewKey(index)} title={`${preset.name} (${viewKey(index)})`} onClick={() => goTo(preset)}>
               {preset.name}
             </button>
           ))}

@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Category, Mount } from '../src/model/catalog.ts';
+import type { Category, LampLight, Mount } from '../src/model/catalog.ts';
 import { importAsset, slugify } from './import/pipeline.ts';
 import { createThumbnailRenderer } from './import/thumbnail.ts';
 
@@ -20,7 +20,13 @@ type SeedModel = {
   rotateY?: number;
   /** Real height in meters, for a model whose published size is implausible. */
   height?: number;
+  /** For a lamp: where its bulb is, and what it gives. */
+  light?: LampLight;
 };
+
+const DESK_LAMP_LIGHT: LampLight = { position: [0.013, 0.76, -0.187], color: '#ffc98f', intensity: 0.8, distance: 4 };
+const CEILING_LAMP_LIGHT: LampLight = { position: [0, 0.03, 0], color: '#ffd9ae', intensity: 2.5, distance: 7 };
+const WALL_LAMP_LIGHT: LampLight = { position: [0, 0.215, 0.065], color: '#ffcf9c', intensity: 1, distance: 5 };
 
 const SEED_MODELS: SeedModel[] = [
   { source: 'painted_wooden_chair_01', name: 'Painted wooden chair', category: 'chair', tags: ['dining', 'kitchen'] },
@@ -38,9 +44,9 @@ const SEED_MODELS: SeedModel[] = [
   { source: 'old_bed_frame', name: 'Old bed frame', category: 'bed', tags: ['bedroom', 'single', 'metal'] },
   { source: 'wooden_display_shelves_01', name: 'Wooden display shelves', category: 'shelf', tags: ['bookcase', 'storage'], rotateY: -90 },
   { source: 'steel_frame_shelves_02', name: 'Steel-frame shelves', category: 'shelf', tags: ['bookcase', 'storage', 'industrial'] },
-  { source: 'desk_lamp_arm_01', name: 'Desk lamp', category: 'lamp', tags: ['light', 'table lamp', 'task'] },
-  { source: 'modern_ceiling_lamp_01', name: 'Modern ceiling lamp', category: 'lamp', tags: ['light', 'pendant'], mount: 'ceiling' },
-  { source: 'industrial_wall_lamp', name: 'Industrial wall lamp', category: 'lamp', tags: ['light', 'sconce'], mount: 'wall' },
+  { source: 'desk_lamp_arm_01', name: 'Desk lamp', category: 'lamp', tags: ['light', 'table lamp', 'task'], light: DESK_LAMP_LIGHT },
+  { source: 'modern_ceiling_lamp_01', name: 'Modern ceiling lamp', category: 'lamp', tags: ['light', 'pendant'], mount: 'ceiling', light: CEILING_LAMP_LIGHT },
+  { source: 'industrial_wall_lamp', name: 'Industrial wall lamp', category: 'lamp', tags: ['light', 'sconce'], mount: 'wall', light: WALL_LAMP_LIGHT },
   { source: 'potted_plant_01', name: 'Tall potted plant', category: 'plant', tags: ['green', 'houseplant', 'floor plant'] },
   { source: 'potted_plant_02', name: 'Potted plant', category: 'plant', tags: ['green', 'houseplant'] },
   { source: 'potted_plant_04', name: 'Potted succulent', category: 'plant', tags: ['green', 'houseplant', 'small'] },
@@ -105,6 +111,7 @@ try {
         license: 'CC0 1.0',
         sourceUrl: `https://polyhaven.com/a/${model.source}`,
         replace: true,
+        light: model.light,
         model: { rotateY: model.rotateY, fit: model.height ? { axis: 'height', meters: model.height } : undefined },
       },
       seedDir,

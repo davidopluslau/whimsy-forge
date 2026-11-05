@@ -81,3 +81,40 @@ describe('categoriesIn', () => {
     expect(categoriesIn([asset({ category: 'plant' }), asset({ category: 'sofa' }), asset({ category: 'plant' })])).toEqual(['sofa', 'plant']);
   });
 });
+
+describe('a lamp entry', () => {
+  const entry = {
+    id: 'lamp',
+    name: 'Lamp',
+    kind: 'model',
+    category: 'lamp',
+    tags: [],
+    mount: 'floor',
+    url: 'assets/lamp/model.glb',
+    thumbnailUrl: 'assets/lamp/thumbnail.webp',
+    dimensions: [1, 1, 1],
+    license: 'CC0 1.0',
+    sourceUrl: 'https://example.com/',
+  };
+  const light = { position: [0, 1, 0], color: '#ffeedd', intensity: 2, distance: 5 };
+
+  it('may have a light, or none', () => {
+    expect(isCatalogAsset(entry)).toBe(true);
+    expect(isCatalogAsset({ ...entry, light })).toBe(true);
+  });
+
+  it.each([
+    ['a position of the wrong length', { ...light, position: [0, 1] }],
+    ['a color that is not hex', { ...light, color: 'warm' }],
+    ['no intensity', { ...light, intensity: 0 }],
+    ['a negative distance', { ...light, distance: -1 }],
+  ])('is refused with %s', (_, bad) => {
+    expect(isCatalogAsset({ ...entry, light: bad })).toBe(false);
+  });
+});
+
+describe('the environment entry', () => {
+  it('is not offered in the panel', () => {
+    expect(parseCatalog([{ id: 'hdri', name: 'HDRI', kind: 'environment', url: 'assets/hdri/environment.hdr', license: 'CC0 1.0', sourceUrl: 'https://example.com/' }])).toEqual([]);
+  });
+});

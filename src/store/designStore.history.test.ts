@@ -160,3 +160,15 @@ describe('item actions', () => {
     expect(saved.items[1]!.size).toEqual([2, 0.8, 1]);
   });
 });
+
+describe('setItemHeight', () => {
+  it('is one undo step, and refuses a change that changes nothing', () => {
+    const store = useDesignStore.getState();
+    store.setDesign({ ...createEmptyDesign('Lamp'), items: [{ id: 'lamp', assetId: 'a', position: [0, 0, 0], rotationY: 0, size: [0.2, 0.9, 0.2], mount: 'floor' }] });
+    expect(useDesignStore.getState().setItemHeight('lamp', 0)).toBe(false);
+    expect(useDesignStore.getState().setItemHeight('lamp', 0.5)).toBe(true);
+    expect(useDesignStore.getState().design.items[0]!.position[1]).toBe(0.5);
+    useDesignStore.getState().undo();
+    expect(useDesignStore.getState().design.items[0]!.position[1]).toBe(0);
+  });
+});
