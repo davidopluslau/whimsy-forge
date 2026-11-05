@@ -9,6 +9,9 @@ compatibility_date = "2026-10-01"
 ACCESS_TEAM_DOMAIN = "cool-feather-83dd.cloudflareaccess.com"
 # AUD tag of the Access application covering whimsy-forge-cze.pages.dev/editor; comma-separate several
 ACCESS_AUD = "58be3dbc9d5ea921c42f9f05c983351830e44d57241160de29dbe6dafbab883b"
+# AUD tag of the Access application covering *.whimsy-forge-cze.pages.dev. Opens /editor on
+# preview deployments, but never authorizes a write: previews share production's bucket.
+ACCESS_PREVIEW_AUD = "c0b812691852dcf086ca5a6bd4c2f05517abf3cf40a979870942c878a14337eb"
 
 [[r2_buckets]]
 binding = "BUCKET"
