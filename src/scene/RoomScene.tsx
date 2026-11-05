@@ -18,7 +18,7 @@ const WALL_COLOR = '#ece6da';
 const FLOOR_COLOR = '#b08d66';
 const BACKGROUND_COLOR = '#d9d4ca';
 
-const MAX_ANISOTROPY = 8;
+const MAX_ANISOTROPY = Number((import.meta as unknown as { env: Record<string, string | undefined> }).env.VITE_MAX_ANISOTROPY ?? 8);
 
 type MaterialMaps = { map: Texture; normalMap: Texture; roughnessMap: Texture };
 

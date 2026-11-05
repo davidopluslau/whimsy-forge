@@ -11,7 +11,19 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { variant: baseline, workers: '2', aniso: '8', gl: '' }
+          - { variant: one-worker, workers: '1', aniso: '8', gl: '' }
+          - { variant: no-aniso, workers: '2', aniso: '1', gl: '' }
+          - { variant: llvmpipe, workers: '2', aniso: '8', gl: 'gl-egl' }
+    env:
+      E2E_WORKERS: ${{ matrix.workers }}
+      E2E_GL: ${{ matrix.gl }}
+      VITE_MAX_ANISOTROPY: ${{ matrix.aniso }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,16 +32,14 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: npm test
       - run: npx playwright install --with-deps chromium
-      - run: nproc; free -m
+      - run: sudo apt-get install -y libgl1-mesa-dri libegl1 libegl-mesa0
+        if: ${{ matrix.gl != '' }}
       - run: npm run test:e2e
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
-          name: playwright-results
-          path: |
-            test-results/
-            playwright-report.json
+          name: playwright-results-${{ matrix.variant }}
+          path: playwright-report.json
           retention-days: 7
           if-no-files-found: ignore

@@ -16,14 +16,18 @@ if (!process.env.E2E_ACCESS_PRIVATE_JWK) {
 }
 
 // Software WebGL so the scene renders on machines without a GPU, such as CI.
-const webgl = { launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] } };
+const webgl = {
+  launchOptions: {
+    args: process.env.E2E_GL ? [`--use-angle=${process.env.E2E_GL}`, '--ignore-gpu-blocklist'] : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+  },
+};
 
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  workers: process.env.CI ? 2 : undefined,
+  workers: process.env.CI ? Number(process.env.E2E_WORKERS ?? 2) : undefined,
   timeout: 60_000,
   reporter: process.env.CI ? [['github'], ['list'], ['json', { outputFile: 'playwright-report.json' }]] : 'list',
   use: { baseURL: `http://localhost:${PORT}`, trace: 'on-first-retry' },
