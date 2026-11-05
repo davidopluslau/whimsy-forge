@@ -30,7 +30,7 @@ const SEED_MODELS: SeedModel[] = [
   { source: 'sofa_02', name: 'Two-seat sofa', category: 'sofa', tags: ['couch', 'settee', 'living room'] },
   { source: 'sofa_03', name: 'Large sofa', category: 'sofa', tags: ['couch', 'living room'] },
   { source: 'round_wooden_table_02', name: 'Round wooden table', category: 'table', tags: ['dining', 'kitchen'] },
-  // Published at 0.877 m high, which is bar height for a table this shape.
+  // Published at 0.877 m high, which is counter height: too high for a dining table.
   { source: 'dining_table', name: 'Dining table', category: 'table', tags: ['kitchen'], height: 0.76 },
   { source: 'coffee_table_round_01', name: 'Round coffee table', category: 'table', tags: ['living room'] },
   { source: 'side_table_01', name: 'Side table', category: 'table', tags: ['end table', 'nightstand'] },
