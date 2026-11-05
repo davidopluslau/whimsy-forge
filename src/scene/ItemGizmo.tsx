@@ -101,5 +101,6 @@ export function ItemGizmo({ item, mode, room, onChange, onStart, onEnd }: GizmoP
     invalidate();
   }, [item?.id, item?.mount, effectiveMode, scene, controls, invalidate]);
 
-  return <primitive object={controls} />;
+  // The controls themselves aren't a scene object; their helper is what gets drawn.
+  return <primitive object={controls.getHelper()} />;
 }
