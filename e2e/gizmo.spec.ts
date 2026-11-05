@@ -15,7 +15,7 @@ const BLUE = (r: number, g: number, b: number) => b > 200 && r < 60 && g < 60;
 
 test.beforeEach(async ({ page, context, baseURL }) => {
   await context.addCookies([{ name: 'CF_Authorization', value: await accessToken(), url: baseURL! }]);
-  await page.goto('/editor');
+  await page.goto('/editor/new');
   await expect(page.getByTestId('catalog')).toHaveAttribute('data-status', 'ready');
 
   const canvas = page.getByTestId('plan-canvas');

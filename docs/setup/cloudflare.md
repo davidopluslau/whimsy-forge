@@ -74,7 +74,7 @@ Preview URLs are public by default, and they read the same bucket as production.
 
 It creates a separate Access application (**whimsy-forge - Cloudflare Pages**) covering `*.whimsy-forge-cze.pages.dev`, with its own AUD tag. Its default policy lets members of your Cloudflare account in; add the **Editors** policy to it if other editors should see previews too.
 
-That AUD is `ACCESS_PREVIEW_AUD` in `wrangler.toml`, which lets `/editor` open on preview URLs so a branch can be reviewed before merging. If you recreate the application, update the value. Previews still can't write, because that AUD isn't in `ACCESS_AUD`, so **Run save and load check** reports `Save failed (401)` on a preview. That's expected. Don't add it to `ACCESS_AUD`: previews share production's bucket.
+That AUD is `ACCESS_PREVIEW_AUD` in `wrangler.toml`, which lets `/editor` open on preview URLs so a branch can be reviewed before merging. If you recreate the application, update the value. Previews still can't write, because that AUD isn't in `ACCESS_AUD`, so the editor on a preview shows **Not saved: signed out**. That's expected. Don't add it to `ACCESS_AUD`: previews share production's bucket.
 
 ## 7. Verify the M0 acceptance criteria
 
@@ -85,7 +85,7 @@ Replace the host below if you use a different one.
 | Chair and orbit | Open `https://whimsy-forge-cze.pages.dev/` and drag | The chair is shown and turns |
 | Phone | Open the same URL on your phone and drag with a finger | The chair is shown and turns |
 | Editor protected | Open `/editor` in a private window | Access login page |
-| Round trip | Sign in at `/editor`, then click **Run save and load check** | "Round trip OK for design ..." |
+| Round trip | Sign in at `/editor`, click **New design**, change the wall height, wait for **Saved**, then reload | The design reopens with the new height |
 | Unauthenticated write | See the command below | `HTTP/2 401` |
 
 ```sh
@@ -94,4 +94,4 @@ curl -i -X PUT https://whimsy-forge-cze.pages.dev/api/designs/aaaaaaaaaaaaaaaaaa
   -d '{"schemaVersion":1,"id":"aaaaaaaaaaaaaaaaaaaaaa"}'
 ```
 
-If the round trip reports `Save failed (401)` while you are signed in, check that the two values from step 5 are deployed and that **Cookie Path Attribute** is off.
+If the editor shows **Not saved: signed out** while you are signed in, check that the two values from step 5 are deployed and that **Cookie Path Attribute** is off.

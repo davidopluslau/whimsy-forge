@@ -8,7 +8,7 @@ const floorModels = (catalog as Entry[]).filter((asset) => asset.kind === 'model
 
 test.beforeEach(async ({ page, context, baseURL }) => {
   await context.addCookies([{ name: 'CF_Authorization', value: await accessToken(), url: baseURL! }]);
-  await page.goto('/editor');
+  await page.goto('/editor/new');
   await expect(page.getByTestId('catalog')).toHaveAttribute('data-status', 'ready');
 });
 

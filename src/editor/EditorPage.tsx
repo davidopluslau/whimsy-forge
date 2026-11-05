@@ -8,12 +8,14 @@ import type { LengthUnit } from '../model/units';
 import type { GizmoMode } from '../scene/ItemGizmo';
 import { type FloorPicker, RoomScene, type SceneEditing } from '../scene/RoomScene';
 import { useDesignStore } from '../store/designStore';
+import type { Autosaver } from '../store/autosave';
 import { CatalogPanel } from './CatalogPanel';
+import { DesignNameField } from './DesignNameField';
 import { isAssetDrag, ASSET_DRAG_TYPE } from './drag';
 import { LengthField } from './LengthField';
 import { PlanEditor } from './PlanEditor';
 import type { PhotoUpload } from './photo';
-import { SaveCheck } from './SaveCheck';
+import { SaveIndicator } from './SaveIndicator';
 
 type ViewMode = 'split' | 'plan' | '3d';
 
@@ -43,11 +45,13 @@ const ARROW_STEPS: Record<string, [number, number]> = {
 /** Shift with an arrow key moves this many times as far. */
 const FAST_NUDGE = 5;
 const QUARTER_TURN = Math.PI / 2;
+/** How long the Designs link waits for an outstanding save. */
+const LEAVE_WAIT_MS = 3000;
 
 /** Where to type or select text, where the editor's shortcuts must not take the key. */
 const isTextTarget = (target: EventTarget | null) => target instanceof HTMLElement && target.closest('input, textarea, select, [contenteditable="true"]') !== null;
 
-export default function EditorPage() {
+export default function EditorPage({ saver }: { saver: Autosaver }) {
   const room = useDesignStore((state) => state.design.room);
   const designItems = useDesignStore((state) => state.design.items);
   const setWallHeight = useDesignStore((state) => state.setWallHeight);
@@ -186,7 +190,22 @@ export default function EditorPage() {
   return (
     <main className="editor" data-view-mode={viewMode} data-catalog-open={catalogOpen}>
       <header className="editor__header">
-        <h1>Editor</h1>
+        <a
+          className="editor__back"
+          href="/editor"
+          onClick={(event) => {
+            // Finish saving first, so the list shows this design as it now stands. A stalled save
+            // mustn't trap the owner here: leaving the page keeps the work in a draft.
+            if (event.ctrlKey || event.metaKey || event.shiftKey) return;
+            event.preventDefault();
+            const giveUp = new Promise((resolve) => setTimeout(resolve, LEAVE_WAIT_MS));
+            void Promise.race([saver.flush(), giveUp]).finally(() => window.location.assign('/editor'));
+          }}
+        >
+          Designs
+        </a>
+        <DesignNameField />
+        <SaveIndicator saver={saver} />
         <div className="segmented" role="group" aria-label="View">
           {VIEW_MODES.map(({ mode, label }) => (
             <button key={mode} type="button" aria-pressed={viewMode === mode} onClick={() => setViewMode(mode)}>
@@ -213,7 +232,6 @@ export default function EditorPage() {
         <button type="button" className="button-quiet" aria-pressed={catalogOpen} onClick={() => setCatalogOpen((open) => !open)}>
           Catalog
         </button>
-        <SaveCheck />
       </header>
       {/* Both panes stay mounted, so switching views keeps a half-drawn wall and the 3D camera. */}
       <div className="editor__panes">

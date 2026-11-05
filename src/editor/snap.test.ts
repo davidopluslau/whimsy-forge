@@ -1,7 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { mergeWithEndpoint, snapPoint, typedTarget } from './snap';
+import { frameWalls, mergeWithEndpoint, snapPoint, typedTarget } from './snap';
 
 const options = { endpoints: [], tolerance: 0.2, gridStep: 0.1, anchor: null };
+
+describe('frameWalls', () => {
+  const limits = { maxScale: 60, minScale: 10 };
+  const size = { width: 800, height: 600 };
+  const wall = (start: [number, number], end: [number, number]) => ({ id: 'w', start, end, thickness: 0.1 });
+
+  it('leaves an empty plan alone', () => {
+    expect(frameWalls([], size, limits)).toBeNull();
+  });
+
+  it('centers a far-off room at the usual zoom when it fits', () => {
+    expect(frameWalls([wall([20, 10], [24, 10]), wall([24, 10], [24, 12])], size, limits)).toEqual({ scale: 60, panX: -22 * 60, panY: -11 * 60 });
+  });
+
+  it('zooms out for a large room, down to the limit', () => {
+    expect(frameWalls([wall([0, 0], [34, 0])], size, limits)!.scale).toBeCloseTo((800 - 120) / 34, 9);
+    expect(frameWalls([wall([0, 0], [1000, 0])], size, limits)!.scale).toBe(10);
+  });
+});
 
 describe('snapPoint', () => {
   it('snaps to the grid', () => {

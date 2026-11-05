@@ -58,6 +58,32 @@ describe('designStore', () => {
     expect(store().design.room.floorMaterialId).toBe('floor-tiles-06');
   });
 
+  it('renames the design, stamps updatedAt, and leaves the undo history alone', () => {
+    store().addWall([0, 0], [4, 0]);
+    const steps = store().past.length;
+    store().setDesign({ ...store().design, updatedAt: '2000-01-01T00:00:00.000Z' });
+    const stepsAfterLoad = store().past.length;
+    expect(stepsAfterLoad).toBe(0);
+    store().addWall([4, 0], [4, 3]);
+    const withWall = store().past.length;
+    expect(steps).toBe(1);
+
+    expect(store().renameDesign('  Den ')).toBe(true);
+    expect(store().design.name).toBe('Den');
+    expect(store().design.updatedAt).not.toBe('2000-01-01T00:00:00.000Z');
+    expect(store().past).toHaveLength(withWall);
+
+    expect(store().undo()).toBe(true);
+    expect(store().design.name).toBe('Den');
+  });
+
+  it('refuses an empty or unchanged name', () => {
+    const before = store().design;
+    expect(store().renameDesign('   ')).toBe(false);
+    expect(store().renameDesign('Test')).toBe(false);
+    expect(store().design).toBe(before);
+  });
+
   it('removes a wall', () => {
     const id = store().addWall([0, 0], [4, 0])!;
     store().removeWall(id);

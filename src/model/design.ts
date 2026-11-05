@@ -50,7 +50,7 @@ export type Item = {
 
 /** All lengths are meters. */
 export type Design = {
-  schemaVersion: 1;
+  schemaVersion: typeof CURRENT_SCHEMA_VERSION;
   id: string;
   name: string;
   updatedAt: string;
@@ -71,4 +71,24 @@ export function createEmptyDesign(name: string): Design {
     items: [],
     cameras: [],
   };
+}
+
+/** The longest name a design may have, in UTF-16 units. */
+export const MAX_DESIGN_NAME_LENGTH = 100;
+
+/** The name as it would be stored, or null if there is nothing left to name a design with. */
+export function cleanDesignName(name: string): string | null {
+  const cleaned = name.trim().slice(0, MAX_DESIGN_NAME_LENGTH).trim();
+  return cleaned === '' ? null : cleaned;
+}
+
+/** The design under a new name, or the same object if the name is empty or unchanged. */
+export function renamedDesign(design: Design, name: string): Design {
+  const cleaned = cleanDesignName(name);
+  return cleaned === null || cleaned === design.name ? design : { ...design, name: cleaned };
+}
+
+/** An independent copy under its own id. Items keep their ids, which are unique only within a design. */
+export function copiedDesign(design: Design, id: string, updatedAt: string): Design {
+  return { ...structuredClone(design), id, updatedAt, name: cleanDesignName(`Copy of ${design.name}`) ?? design.name };
 }
