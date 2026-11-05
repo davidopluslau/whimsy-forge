@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useCatalog } from '../api/catalog';
+import type { CatalogState } from '../api/catalog';
 import { assetHref, type CatalogAsset, type Category, CATEGORY_LABELS, categoriesIn, filterCatalog } from '../model/catalog';
 import { formatLength, type LengthUnit } from '../model/units';
 import { AssetPreview } from '../scene/AssetPreview';
+import { ASSET_DRAG_TYPE } from './drag';
+import { PhotoForm } from './PhotoForm';
+import type { PhotoUpload } from './photo';
 
 function formatSize(meters: readonly number[], unit: LengthUnit) {
   return meters.map((side) => formatLength(side, unit)).join(' × ');
@@ -12,9 +15,10 @@ type PreviewDialogProps = {
   asset: CatalogAsset;
   unit: LengthUnit;
   onClose: () => void;
+  onPlace: (asset: CatalogAsset) => void;
 };
 
-function PreviewDialog({ asset, unit, onClose }: PreviewDialogProps) {
+function PreviewDialog({ asset, unit, onClose, onPlace }: PreviewDialogProps) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [measured, setMeasured] = useState<[number, number, number] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -59,9 +63,20 @@ function PreviewDialog({ asset, unit, onClose }: PreviewDialogProps) {
             Source
           </a>
         </p>
-        <button type="button" className="button-quiet" onClick={() => dialog.current?.close()}>
-          Close
-        </button>
+        <div className="asset-preview__actions">
+          <button
+            type="button"
+            onClick={() => {
+              dialog.current?.close();
+              onPlace(asset);
+            }}
+          >
+            Place in room
+          </button>
+          <button type="button" className="button-quiet" onClick={() => dialog.current?.close()}>
+            Close
+          </button>
+        </div>
       </div>
     </dialog>
   );
@@ -69,10 +84,14 @@ function PreviewDialog({ asset, unit, onClose }: PreviewDialogProps) {
 
 type CatalogPanelProps = {
   unit: LengthUnit;
+  catalog: CatalogState;
+  retry: () => void;
+  /** Places an asset in the room, at the middle of the floor or on the longest wall. */
+  onPlace: (asset: CatalogAsset) => void;
+  onAddPhoto: (photo: PhotoUpload) => void;
 };
 
-export function CatalogPanel({ unit }: CatalogPanelProps) {
-  const { catalog, retry } = useCatalog();
+export function CatalogPanel({ unit, catalog, retry, onPlace, onAddPhoto }: CatalogPanelProps) {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<Category | null>(null);
   const [previewing, setPreviewing] = useState<CatalogAsset | null>(null);
@@ -118,7 +137,17 @@ export function CatalogPanel({ unit }: CatalogPanelProps) {
       <ul className="catalog__grid">
         {matches.map((asset) => (
           <li key={asset.id}>
-            <button type="button" className="catalog__tile" data-asset-id={asset.id} onClick={() => setPreviewing(asset)}>
+            <button
+              type="button"
+              className="catalog__tile"
+              data-asset-id={asset.id}
+              draggable
+              onDragStart={(event) => {
+                event.dataTransfer.setData(ASSET_DRAG_TYPE, asset.id);
+                event.dataTransfer.effectAllowed = 'copy';
+              }}
+              onClick={() => setPreviewing(asset)}
+            >
               <img src={assetHref(asset.thumbnailUrl)} alt="" width={256} height={256} loading="lazy" decoding="async" />
               <span className="catalog__name">{asset.name}</span>
             </button>
@@ -126,7 +155,9 @@ export function CatalogPanel({ unit }: CatalogPanelProps) {
         ))}
       </ul>
 
-      {previewing && <PreviewDialog key={previewing.id} asset={previewing} unit={unit} onClose={() => setPreviewing(null)} />}
+      {previewing && <PreviewDialog key={previewing.id} asset={previewing} unit={unit} onClose={() => setPreviewing(null)} onPlace={onPlace} />}
+
+      <PhotoForm unit={unit} onAdd={onAddPhoto} />
     </aside>
   );
 }

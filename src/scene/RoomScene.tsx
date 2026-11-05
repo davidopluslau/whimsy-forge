@@ -1,10 +1,14 @@
 import { Environment, Lightformer, OrbitControls } from '@react-three/drei';
 import { Canvas, useThree } from '@react-three/fiber';
-import { useEffect, useMemo, useState } from 'react';
-import { BufferAttribute, BufferGeometry, RepeatWrapping, SRGBColorSpace, TextureLoader, Vector3, type Texture } from 'three';
-import type { Room } from '../model/design';
+import { type MutableRefObject, useEffect, useMemo, useState } from 'react';
+import { BufferAttribute, BufferGeometry, Plane, Raycaster, RepeatWrapping, SRGBColorSpace, TextureLoader, Vector2, Vector3, type Texture } from 'three';
+import type { Item, Room, Vec2 } from '../model/design';
 import { materialById, type MaterialAsset } from '../model/materials';
+import type { CatalogAsset } from '../model/catalog';
+import { itemImage } from '../model/items';
 import { buildRoomGeometry, floorUvs, type RoomGeometry } from './roomGeometry';
+import { ItemGizmo, type GizmoMode, type GizmoPatch } from './ItemGizmo';
+import { ItemMesh } from './ItemMesh';
 
 const FOV = 40;
 /** High enough to see the floor over the near walls. */
@@ -121,13 +125,59 @@ function FrameRoom({ bounds, wallHeight }: { bounds: RoomGeometry['bounds']; wal
   return null;
 }
 
-/** The 3D view of a room. Everything here is derived from the Design's room. */
-export function RoomScene({ room }: { room: Room }) {
+/** Converts a screen position to a point on the floor, for dropping things where the user points. */
+export type FloorPicker = (clientX: number, clientY: number) => Vec2 | null;
+
+/** Hands the parent a way to turn screen positions into floor points, once the canvas exists. */
+function FloorPickerHandle({ target }: { target: MutableRefObject<FloorPicker | null> }) {
+  const camera = useThree((state) => state.camera);
+  const domElement = useThree((state) => state.gl.domElement);
+  useEffect(() => {
+    const raycaster = new Raycaster();
+    const ground = new Plane(new Vector3(0, 1, 0), 0);
+    const hit = new Vector3();
+    target.current = (clientX, clientY) => {
+      const rect = domElement.getBoundingClientRect();
+      raycaster.setFromCamera(new Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1), camera);
+      return raycaster.ray.intersectPlane(ground, hit) ? [hit.x, hit.z] : null;
+    };
+    return () => {
+      target.current = null;
+    };
+  }, [camera, domElement, target]);
+  return null;
+}
+
+/** What the editor adds to the scene: selection, gizmos, and the edits they make. */
+export type SceneEditing = {
+  selectedId: string | null;
+  gizmo: GizmoMode;
+  onSelect: (id: string | null) => void;
+  onItemChange: (id: string, patch: GizmoPatch) => void;
+  onGestureStart: () => void;
+  onGestureEnd: () => void;
+  pickFloor: MutableRefObject<FloorPicker | null>;
+};
+
+type RoomSceneProps = {
+  room: Room;
+  /** Placed items, with `catalog` to look up their images. Omit both for a room with no furniture. */
+  items?: Item[];
+  catalog?: ReadonlyMap<string, CatalogAsset>;
+  /** Ids of floor items that overlap another. */
+  overlapping?: ReadonlySet<string>;
+  /** Present only in the editor; the read-only viewer leaves it out. */
+  editing?: SceneEditing;
+};
+
+/** The 3D view of a room. Everything here is derived from the Design's room and items. */
+export function RoomScene({ room, items = [], catalog = new Map(), overlapping = new Set(), editing }: RoomSceneProps) {
   const geometry = useMemo(() => buildRoomGeometry(room), [room]);
   const floorTexCoords = useMemo(() => (geometry.floor ? floorUvs(geometry.floor) : null), [geometry.floor]);
+  const selected = editing ? (items.find((item) => item.id === editing.selectedId) ?? null) : null;
 
   return (
-    <Canvas frameloop="demand" dpr={[1, 2]} camera={{ position: INITIAL_CAMERA_POSITION, fov: FOV }}>
+    <Canvas frameloop="demand" dpr={[1, 2]} camera={{ position: INITIAL_CAMERA_POSITION, fov: FOV }} onPointerMissed={editing ? () => editing.onSelect(null) : undefined}>
       <color attach="background" args={[BACKGROUND_COLOR]} />
       <Environment resolution={64} frames={1}>
         <Lightformer intensity={2.5} position={[0, 4, 0]} rotation={[Math.PI / 2, 0, 0]} scale={8} />
@@ -139,8 +189,23 @@ export function RoomScene({ room }: { room: Room }) {
         <Surface key={wall.wallId} positions={wall.positions} uvs={wall.uvs} materialId={room.walls[index]!.materialId} plainColor={WALL_COLOR} />
       ))}
       {geometry.floor && floorTexCoords && <Surface positions={geometry.floor} uvs={floorTexCoords} materialId={room.floorMaterialId} plainColor={FLOOR_COLOR} />}
+      {items.map((item) => (
+        <ItemMesh
+          key={item.id}
+          item={item}
+          image={itemImage(item, catalog)}
+          overlapping={overlapping.has(item.id)}
+          onSelect={editing ? (id) => editing.onSelect(id) : undefined}
+        />
+      ))}
       <OrbitControls makeDefault maxPolarAngle={Math.PI / 2 - 0.02} />
       <FrameRoom bounds={geometry.bounds} wallHeight={room.wallHeight} />
+      {editing && (
+        <>
+          <ItemGizmo item={selected} mode={editing.gizmo} room={room} onChange={editing.onItemChange} onStart={editing.onGestureStart} onEnd={editing.onGestureEnd} />
+          <FloorPickerHandle target={editing.pickFloor} />
+        </>
+      )}
     </Canvas>
   );
 }

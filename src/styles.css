@@ -584,3 +584,98 @@ a {
   stroke: var(--accent);
   stroke-width: 2;
 }
+
+.plan__item {
+  fill: var(--ink);
+  fill-opacity: 0.18;
+  stroke: var(--ink);
+  stroke-width: 1;
+  cursor: pointer;
+}
+
+.plan__item--selected {
+  fill: var(--accent);
+  fill-opacity: 0.35;
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.plan__item--overlap {
+  fill: var(--danger);
+  fill-opacity: 0.4;
+  stroke: var(--danger);
+}
+
+.item-bar {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 16px);
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.item-bar__name {
+  font-weight: 600;
+}
+
+.scene-notice {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 1;
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+
+.scene-notice--error {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.photo-form {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.photo-form__title {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--ink);
+}
+
+.photo-form__kind {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.photo-form__error {
+  margin: 0;
+  color: var(--danger);
+}
+
+.asset-preview__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
