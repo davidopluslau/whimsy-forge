@@ -1,0 +1,14 @@
+# Source of truth for the Pages project's configuration (see docs/setup/cloudflare.md).
+name = "whimsy-forge"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-10-01"
+
+# Not secrets: the team domain and AUD tag only identify which tokens to accept.
+# While either is empty, every write and the editor route return 401 (fail closed).
+[vars]
+ACCESS_TEAM_DOMAIN = "" # e.g. "myteam.cloudflareaccess.com"
+ACCESS_AUD = ""         # Access application AUD tag; comma-separate several
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "whimsy-forge"

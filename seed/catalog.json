@@ -1,0 +1,11 @@
+[
+  {
+    "id": "painted-wooden-chair-01",
+    "name": "Painted Wooden Chair 01",
+    "kind": "model",
+    "url": "assets/painted-wooden-chair-01/model.glb",
+    "thumbnailUrl": "",
+    "dimensions": [0.43, 0.96, 0.54],
+    "license": "CC0 1.0, https://polyhaven.com/a/painted_wooden_chair_01"
+  }
+]

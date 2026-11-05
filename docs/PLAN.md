@@ -103,7 +103,30 @@ type Asset = {
 
 **Sharing.** A share link opens a frozen snapshot in a read-only viewer at `/v/<snapshotId>`, with touch orbit and camera presets. "Export image" saves a PNG of the view.
 
-**Security.** Editor and write API behind Cloudflare Access (or a single secret). Viewer routes and asset reads are public, with unguessable IDs. No secrets in the front-end bundle.
+**Security.** Editor and write API behind Cloudflare Access (or a single secret). Viewer routes and asset reads are public, with unguessable IDs. No secrets in the front-end bundle. Access covers `/editor` at the edge. Because Access matches paths and not methods, `/api/*` stays outside it and a Function verifies the Access token on every write, so reads stay public and unauthenticated writes get a 401.
+
+## Cloudflare free-tier limits
+
+Checked against Cloudflare's docs on 2026-11-04. Recheck before relying on them.
+
+| Service | Limit on the free tier |
+| --- | --- |
+| Pages builds | 500 per month, 1 at a time, 20-minute timeout |
+| Pages site | 20,000 files, 25 MiB per file, 100 custom domains per project, unlimited preview deployments |
+| Functions requests | 100,000 per day, shared with Workers, reset at midnight UTC (Error 1027 beyond that) |
+| Functions runtime | 10 ms CPU per request, 128 MB memory, 50 subrequests per invocation, 64 MiB bundle |
+| Request body | 100 MB (set by the domain's Cloudflare plan) |
+| R2 storage | 10 GB-month per month, Standard storage only |
+| R2 operations | 1 million Class A and 10 million Class B per month |
+| R2 egress | Free |
+
+What this means for Whimsy Forge:
+
+- **CPU is the tightest limit.** 10 ms rules out heavy work in Functions, such as image processing, so asset processing stays in `scripts/`. Design documents are capped at 1 MiB to keep JSON parsing cheap.
+- **Every asset read counts as a Function request** because assets are served through `/api/assets/*`. One user stays far below 100,000 per day, and assets carry a one-day browser cache. If a popular share link ever gets close, serve assets from an R2 custom domain instead.
+- **At a 30 MB per-design budget**, 10 GB holds roughly 300 designs' worth of unique assets.
+
+Sources: [Pages limits](https://developers.cloudflare.com/pages/platform/limits/), [Functions pricing](https://developers.cloudflare.com/pages/functions/pricing/), [Workers limits](https://developers.cloudflare.com/workers/platform/limits/), [R2 pricing](https://developers.cloudflare.com/r2/pricing/).
 
 ## Milestones
 
