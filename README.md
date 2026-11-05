@@ -3,6 +3,7 @@
 Build 3D interior designs and share them as read-only links.
 
 - Plan: [docs/PLAN.md](docs/PLAN.md)
+- System design: [docs/SYSTEM_DESIGN.md](docs/SYSTEM_DESIGN.md)
 - Milestones: [docs/milestones](docs/milestones)
 - Cloudflare setup: [docs/setup/cloudflare.md](docs/setup/cloudflare.md)
 - Notes for Claude Code: [CLAUDE.md](CLAUDE.md)
