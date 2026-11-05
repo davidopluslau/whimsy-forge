@@ -1,7 +1,8 @@
 // Uploads everything in seed/ to the R2 bucket, keeping relative paths as object keys.
 // Usage: node scripts/seed-r2.mjs --local|--remote [--persist-to <dir>]
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { extname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -26,13 +27,21 @@ const files = readdirSync(seedDir, { recursive: true, withFileTypes: true })
   .filter((entry) => entry.isFile())
   .map((entry) => join(entry.parentPath, entry.name));
 
-for (const file of files) {
-  const key = relative(seedDir, file).split(sep).join('/');
-  const contentType = CONTENT_TYPES[extname(file)] ?? 'application/octet-stream';
+// One bulk upload per content type, as a bulk upload sets a single content type for all its files.
+const byContentType = Map.groupBy(files, (file) => CONTENT_TYPES[extname(file)] ?? 'application/octet-stream');
+
+const listDir = mkdtempSync(join(tmpdir(), 'whimsy-forge-seed-'));
+let status = 0;
+for (const [contentType, group] of byContentType) {
+  const list = join(listDir, 'files.json');
+  writeFileSync(list, JSON.stringify(group.map((file) => ({ key: relative(seedDir, file).split(sep).join('/'), file }))));
   const result = spawnSync(
     process.execPath,
-    [wrangler, 'r2', 'object', 'put', `${BUCKET}/${key}`, '--file', file, '--content-type', contentType, ...args],
+    [wrangler, 'r2', 'bulk', 'put', BUCKET, '--filename', list, '--content-type', contentType, '--force', ...args],
     { cwd: root, stdio: 'inherit' },
   );
-  if (result.status !== 0) process.exit(result.status ?? 1);
+  status = result.status ?? 1;
+  if (status !== 0) break;
 }
+rmSync(listDir, { recursive: true, force: true });
+process.exit(status);

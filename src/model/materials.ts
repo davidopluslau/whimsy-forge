@@ -16,8 +16,8 @@ export type MaterialAsset = {
   color: string;
   /** Real-world size of one texture tile in meters: [width, height, 0]. */
   dimensions: [number, number, number];
-  /** License, with source URL. */
   license: string;
+  sourceUrl: string;
 };
 
 export const MATERIALS = catalog.filter((asset) => asset.kind === 'material') as MaterialAsset[];

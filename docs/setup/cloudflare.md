@@ -20,7 +20,7 @@ npx wrangler login
 npm run seed:remote
 ```
 
-This uploads everything in `seed/`: the catalog, the chair and the material textures. Re-run it whenever `seed/` gains files.
+This uploads everything in `seed/`: the catalog, the furniture and the material textures. Re-run it whenever `seed/` gains files other than through `npm run import-asset`, which uploads its own.
 
 ## 3. Connect the Pages project
 

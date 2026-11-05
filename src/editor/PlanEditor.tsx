@@ -364,7 +364,7 @@ export function PlanEditor({ unit }: { unit: LengthUnit }) {
           <input type="checkbox" checked={gridSnap} onChange={(event) => setGridSnap(event.target.checked)} />
           Snap to grid
         </label>
-        <p className="plan__status" role="status" data-testid="room-status">
+        <p className="plan__status" role="status" data-testid="room-status" title={status}>
           {status}
         </p>
       </div>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { LengthUnit } from '../model/units';
 import { RoomScene } from '../scene/RoomScene';
 import { useDesignStore } from '../store/designStore';
+import { CatalogPanel } from './CatalogPanel';
 import { LengthField } from './LengthField';
 import { PlanEditor } from './PlanEditor';
 import { SaveCheck } from './SaveCheck';
@@ -24,9 +25,10 @@ export default function EditorPage() {
   const setWallHeight = useDesignStore((state) => state.setWallHeight);
   const [viewMode, setViewMode] = useState<ViewMode>('split');
   const [unit, setUnit] = useState<LengthUnit>('m');
+  const [catalogOpen, setCatalogOpen] = useState(true);
 
   return (
-    <main className="editor" data-view-mode={viewMode}>
+    <main className="editor" data-view-mode={viewMode} data-catalog-open={catalogOpen}>
       <header className="editor__header">
         <h1>Editor</h1>
         <div className="segmented" role="group" aria-label="View">
@@ -44,10 +46,14 @@ export default function EditorPage() {
           ))}
         </div>
         <LengthField label="Wall height" meters={room.wallHeight} unit={unit} onCommit={setWallHeight} />
+        <button type="button" className="button-quiet" aria-pressed={catalogOpen} onClick={() => setCatalogOpen((open) => !open)}>
+          Catalog
+        </button>
         <SaveCheck />
       </header>
       {/* Both panes stay mounted, so switching views keeps a half-drawn wall and the 3D camera. */}
       <div className="editor__panes">
+        <CatalogPanel unit={unit} />
         <section className="editor__pane editor__pane--plan" aria-label="Floor plan">
           <PlanEditor unit={unit} />
         </section>

@@ -1,6 +1,6 @@
 # Whimsy Forge — System Design
 
-**Reflects:** `main` through M2 (Openings and surfaces).
+**Reflects:** `main` through M3 (Catalog and asset pipeline).
 
 This document describes the system **as built**. For why the project exists, its requirements and its roadmap, see [PLAN.md](PLAN.md). For one milestone's scope, see [milestones/](milestones/). If this document and the code disagree, the code is right and this document has a bug: fix it.
 
@@ -53,6 +53,7 @@ flowchart LR
             apiGuard["api/_middleware<br/>token check on writes"]
             designs["api/designs/:id"]
             assets["api/assets/*"]
+            catalog["api/catalog"]
         end
         r2[("R2 bucket: whimsy-forge<br/>designs/, assets/, catalog.json")]
     end
@@ -63,6 +64,7 @@ flowchart LR
     public --> apiGuard
     apiGuard --> designs --> r2
     apiGuard --> assets --> r2
+    apiGuard --> catalog --> r2
 ```
 
 | Part | Technology | Where |
@@ -72,7 +74,7 @@ flowchart LR
 | API | Cloudflare Pages Functions, `jose` for token checks | `functions/` |
 | Storage | One R2 bucket, bound as `BUCKET` | `wrangler.toml` |
 | Auth | Cloudflare Access, verified again in Functions | `functions/_lib/access.ts` |
-| Asset tooling | Node scripts, run by hand and never in Functions | `scripts/`, `seed/` |
+| Asset tooling | Node scripts with `gltf-transform`, `sharp` and headless Chromium, run by hand and never in Functions | `scripts/`, `seed/` |
 
 ## Core invariants
 
@@ -85,20 +87,22 @@ Changing any of these is a major decision, and must be recorded here.
 - **Design and snapshot IDs are unguessable:** 128 random bits as 22 base64url characters (`src/model/ids.ts`).
 - **No secrets in the bundle.** The JavaScript is public, including the editor's chunk; only the `/editor` page route and API writes are guarded.
 - **Fail closed.** Missing or malformed Access configuration denies the request.
-- **Every third-party asset records its license and source URL** in the catalog.
+- **Every third-party asset records its license and source URL** in the catalog. The import refuses an asset without them, and `parseCatalog` leaves such an entry out of the panel.
+- **A model file is in meters, with its pivot at bottom center and its front facing +z,** and its catalog `dimensions` are measured from the finished file. `scripts/import/model.ts` guarantees the size and pivot; `--rotate-y` sets the facing by hand.
 
 ## Front-end modules
 
 ```mermaid
 flowchart TD
     app["App.tsx<br/>route by pathname, lazy chunks"]
-    editor["editor/<br/>EditorPage, PlanEditor, fields"]
+    editor["editor/<br/>EditorPage, PlanEditor, CatalogPanel, fields"]
     viewer["viewer/<br/>ChairPage"]
-    scene["scene/<br/>RoomScene, roomGeometry, ChairScene"]
+    scene["scene/<br/>RoomScene, roomGeometry, AssetPreview, ChairScene"]
     store["store/<br/>designStore (Zustand)"]
     api["api/<br/>fetch client"]
-    model["model/<br/>Design types, room, openings,<br/>materials, migrate, ids, units"]
-    catalog["seed/catalog.json<br/>imported at build time"]
+    model["model/<br/>Design types, room, openings, catalog,<br/>materials, migrate, ids, units"]
+    materials["seed/catalog.json<br/>imported at build time, for materials"]
+    scripts["scripts/<br/>import-asset, seed-models"]
     fns["functions/"]
 
     app --> editor
@@ -110,8 +114,10 @@ flowchart TD
     viewer --> scene
     scene --> model
     store --> model
-    model --> catalog
+    api --> model
+    model --> materials
     fns -->|"ids.ts only"| model
+    scripts -->|"catalog.ts only"| model
 ```
 
 Dependencies point one way, toward `model`.
@@ -122,13 +128,15 @@ Dependencies point one way, toward `model`.
 
 ## Data model
 
-Types are in `src/model/design.ts` and `src/model/materials.ts`. `PLAN.md` has the original sketch; the code is authoritative.
+Types are in `src/model/design.ts`, `src/model/catalog.ts` and `src/model/materials.ts`. `PLAN.md` has the original sketch; the code is authoritative.
 
 - **Design:** `schemaVersion` (currently 1), `id`, `name`, `updatedAt`, `room`, `items`, `cameras`. `items` and `cameras` are defined and always empty until M4 and M6.
 - **Room:** `wallHeight`, `walls`, `openings`, optional `floorMaterialId`.
 - **Wall:** `start` and `end` in plan coordinates, `thickness`, optional `materialId`.
 - **Opening:** belongs to a wall by `wallId`. `offset` runs along the wall from its start to the opening's near edge, and `sill` is the height of its bottom edge above the floor (always 0 for a door).
 - **Assets are referenced by ID.** An ID that is unset or no longer in the catalog is not an error: the surface falls back to a plain color.
+- **Catalog asset** (`model`, `picture` or `rug`): `id`, `name`, `kind`, `category`, `tags`, `mount`, `url`, `thumbnailUrl`, `dimensions`, `license`, `sourceUrl`. `category` is a closed list in `catalog.ts`, and `mount` is where an item goes when first placed. `dimensions` is always [x, y up, z]: a picture's z is its frame depth and a rug's y its thickness. `license` and `sourceUrl` are separate fields, which departs from PLAN.md's single string.
+- **Material asset:** as PLAN.md describes, also with `sourceUrl`, and with an empty `thumbnailUrl` because nothing displays one.
 
 **Migration.** Every load goes through `parseDesign` → `migrate(doc)`. Today `migrate` accepts only the current version and throws on anything else. M5 adds real steps.
 
@@ -178,6 +186,7 @@ All routes are in `functions/`. Responses are same-origin, so there is no CORS.
 | `GET /api/designs/:id` | Public | The stored bytes with `Cache-Control: no-store` and an `ETag`. 400 for a malformed ID, 404 if absent. |
 | `PUT /api/designs/:id` | Owner, same origin | Stores the received bytes as they are, and returns 204. 400 for bad UTF-8 or JSON, a body `id` that doesn't match the URL, or a missing numeric `schemaVersion`. 413 over 1 MiB. |
 | `GET /api/assets/*` | Public | Objects under the `assets/` prefix only, with a one-day browser cache, `ETag` and 304 support. |
+| `GET /api/catalog` | Public | The bucket's `catalog.json` with `Cache-Control: no-cache`, `ETag` and 304 support, so a new import shows up at once. 404 before the bucket is seeded. |
 | Any other `/api/*` | Same check as above by method | JSON 404 from `functions/api/[[path]].ts`, so it doesn't fall through to `index.html`. |
 
 The server validates only the envelope, not the document's contents: the owner is the only writer, and the client's `migrate` handles what it loads. Saves are last-write-wins.
@@ -212,14 +221,30 @@ flowchart TD
 | R2 key | Written by | Read through |
 | --- | --- | --- |
 | `designs/<id>.json` | `PUT /api/designs/:id` | `GET /api/designs/:id` |
-| `assets/<assetId>/<file>` | `scripts/seed-r2.mjs` | `GET /api/assets/*` |
-| `catalog.json` | `scripts/seed-r2.mjs` | Nothing yet; see [Open design questions](#open-design-questions) |
+| `assets/<assetId>/<file>` | `scripts/import-asset.ts`, `scripts/seed-r2.mjs` | `GET /api/assets/*` |
+| `catalog.json` | `scripts/import-asset.ts`, `scripts/seed-r2.mjs` | `GET /api/catalog` |
 
 There is no database. D1 is an option in the plan but isn't used.
 
-**Assets** are checked in under `seed/` and uploaded key for key. Materials are Poly Haven 1K maps converted to WebP by `scripts/fetch-materials.mjs`. Asset paths in the catalog are relative to the API root (`assets/…`), and the client prefixes `/api/`.
+**Assets** are checked in under `seed/` and uploaded key for key. A model is `assets/<id>/model.glb`, an image `assets/<id>/image.webp`, and either has `assets/<id>/thumbnail.webp`. Materials are Poly Haven 1K maps converted to WebP by `scripts/fetch-materials.mjs`. Asset paths in the catalog are relative to the API root (`assets/…`), and the client prefixes `/api/`.
 
-**The catalog is compiled in.** `src/model/materials.ts` imports `seed/catalog.json` at build time, so the bundle's catalog and the bucket's contents are updated separately. Seeding doesn't run on deploy: when `seed/` changes, run `npm run seed:remote` before merging. Until it runs, production's new catalog entries point at objects that don't exist, and surfaces using them stay a plain color.
+**The import pipeline** is `scripts/import-asset.ts` over `scripts/import/`:
+
+```mermaid
+flowchart LR
+    src["GLB, glTF or image"] --> norm["Normalize<br/>rotate, scale to meters"]
+    norm --> comp["Compress<br/>simplify, meshopt, WebP"]
+    comp --> pivot["Pivot to bottom center,<br/>measure the result"]
+    pivot --> thumb["Thumbnail<br/>three.js in headless Chromium"]
+    thumb --> seed["seed/assets, seed/catalog.json"]
+    seed --> r2[("R2, catalog.json last")]
+```
+
+- **meshopt and WebP, not Draco and KTX2:** three.js decodes both with no extra fetch, while drei's Draco default loads its decoder from a third-party CDN.
+- **`seed/catalog.json` is the catalog's source of truth,** and the bucket's `catalog.json` is a copy of it. An import reads the local file, so it must run from an up-to-date checkout, and `seed/` must be committed afterward.
+- **`scripts/seed-models.ts`** rebuilds the seed furniture from Poly Haven through the same pipeline, checking each file's md5 and each model's height against the published size. It doesn't upload.
+
+**The catalog is read two ways.** The catalog panel fetches furniture at runtime through `GET /api/catalog` (`src/api/catalog.ts`), so an import needs no deploy. Materials stay compiled in: `src/model/materials.ts` imports `seed/catalog.json` at build time, because surfaces look them up synchronously and imports don't add them. Seeding doesn't run on deploy: when `seed/` changes other than by an import, run `npm run seed:remote` before merging. Until it runs, production's new material entries point at objects that don't exist and surfaces using them stay a plain color, and the panel lists only what the bucket's `catalog.json` lists.
 
 **Limits** are in [PLAN.md](PLAN.md#cloudflare-free-tier-limits). The 10 ms CPU limit on Functions is the one that shapes the design: heavy work happens in `scripts/` or the browser, never in a Function.
 
@@ -228,13 +253,15 @@ There is no database. D1 is an option in the plan but isn't used.
 | Layer | Tool | Runs against |
 | --- | --- | --- |
 | Domain logic, geometry, store | Vitest in Node (`src/**/*.test.ts`) | Pure functions |
+| Import pipeline, seed catalog | Vitest in Node (`tests/scripts/`) | The pipeline with a stub thumbnail renderer, and the checked-in GLBs: sizes, pivots, seat heights, budgets |
 | Functions | Vitest (`tests/functions/`) | Handlers called directly |
-| End to end | Playwright (`e2e/`) | A fresh build on the real Pages runtime (workerd) with local R2 |
+| End to end | Playwright (`e2e/`) | A fresh build on the real Pages runtime (workerd) with local R2. Every seed model is loaded in the browser and measured, and one test runs the real import command |
 
 - **Access in e2e:** `playwright.config.ts` generates a throwaway RSA key each run, and `e2e/access-token.ts` signs short-lived tokens with it, so the real verification path is exercised.
 - **Browsers:** a desktop project runs every spec and a phone project runs the chair spec. Both use software WebGL, so no GPU is needed.
 - **CI** (`.github/workflows/ci.yml`) runs build, unit tests and e2e on pushes to `main` and on pull requests.
 - **Deploys** use Pages' Git integration: `main` goes to production (`whimsy-forge-cze.pages.dev`), and other branches go to Access-restricted previews (`<branch>.whimsy-forge-cze.pages.dev`).
+- **Scripts** are TypeScript run directly by Node 22.18+ with type stripping, and type-checked by `tsconfig.node.json`. `scripts/seed-r2.mjs` uses `wrangler r2 bulk put`, grouped by content type, to keep the e2e server's start within its timeout.
 - **Local development:** see [README.md](../README.md#development). `npm run dev:pages` is the whole stack; `npm run dev` adds hot reload and proxies `/api` to it.
 
 ## Known limitations
@@ -245,7 +272,10 @@ There is no database. D1 is an option in the plan but isn't used.
 | `SaveCheck` writes a new design to R2 on each run and never deletes it | Small test documents; temporary tool | M5 should remove it |
 | Saves are last-write-wins, so two open tabs can overwrite each other | One editor | Consider in M5; `ETag` is already returned |
 | `/` shows the M0 chair page, and `/v/*` does too | No viewer yet | M6 |
-| Replacing an asset at the same key can be stale in browsers for up to a day | Assets rarely change | Use a new asset ID instead of overwriting |
+| Replacing an asset at the same key can be stale in browsers for up to a day | Assets rarely change | Use a new asset ID instead of `--replace` |
+| An import from a stale checkout overwrites the bucket's `catalog.json` with that checkout's list | One owner, one machine; `seed/` is committed after each import | Not planned |
+| `seed/` holds finished binaries in git | Small so far, and it lets e2e and `seed:remote` run with no other source | Move out of git if it grows large |
+| At 1280 px wide with the catalog open, the plan's status line truncates (full text in its tooltip) | The header's Catalog button gives the width back | Revisit with M4's panels |
 
 ## Planned architecture
 
@@ -253,18 +283,16 @@ There is no database. D1 is an option in the plan but isn't used.
 
 | Milestone | Adds | Notes for the implementer |
 | --- | --- | --- |
-| M3 Catalog | `scripts/import-asset.ts`, catalog panel, seed models | See question 1. `thumbnailUrl` is empty for every entry today. |
-| M4 Placement | Items in the store and scene, undo/redo, photo uploads | Undo can wrap `updateRoom` and an equivalent for items, but drags dispatch on every pointer move, so one drag must become one undo step. `setDesign` must not land in the history. See question 2. |
-| M5 Persistence | Autosave, design list, real migrations | See question 3. `Design['schemaVersion']` is a literal type and `migrate` rejects everything else, so both change at the first bump. |
-| M6 Sharing | Snapshots, `/v/<id>` viewer, image export, Open Graph tags | See questions 4 and 5. `RoomScene` can be reused because it takes props. Image export needs a look at `frameloop="demand"` and `preserveDrawingBuffer`. |
+| M4 Placement | Items in the store and scene, undo/redo, photo uploads | The catalog is fetched inside `CatalogPanel`; the scene will need it too, and resolving an `assetId` is asynchronous. Assets carry a `mount` default. Undo can wrap `updateRoom` and an equivalent for items, but drags dispatch on every pointer move, so one drag must become one undo step. `setDesign` must not land in the history. See question 1. |
+| M5 Persistence | Autosave, design list, real migrations | See question 2. `Design['schemaVersion']` is a literal type and `migrate` rejects everything else, so both change at the first bump. |
+| M6 Sharing | Snapshots, `/v/<id>` viewer, image export, Open Graph tags | See questions 3 and 4. `RoomScene` can be reused because it takes props. Image export needs a look at `frameloop="demand"` and `preserveDrawingBuffer`. |
 | M7 Polish | HDRI, soft shadows, lamps, phone budget | An HDRI should be self-hosted in R2 to keep scenes free of third-party requests. Budget: textures up to 2048 px, roughly 30 MB per design. |
 
 ## Open design questions
 
 Gaps between [PLAN.md](PLAN.md) and the architecture as built. Remove each one when it is decided, and record the outcome above.
 
-1. **Where does the app read the catalog? (M3)** The app compiles in `seed/catalog.json`, while R2's `catalog.json` is unread and no route serves it, since `/api/assets/*` is limited to `assets/`. M3's import script "uploads to R2 and appends to `catalog.json`". With the compiled copy, each import also needs a commit and a deploy before the asset can be used. With a runtime fetch, there needs to be a route, loading states, and a rework of the synchronous `materialById`.
-2. **How do photo uploads get in? (M4)** No route writes assets, and Functions can't resize images within 10 ms of CPU. Resizing in the browser before upload fits the limits. A new write route gets the owner-only check from `api/_middleware.ts`, but it still needs size and type limits, and uploads shouldn't be able to replace existing assets.
-3. **How is the design list protected? (M5)** `api/_middleware.ts` makes every `GET` public. A `GET /api/designs` list would hand out every live design's ID, which is a read capability, so it needs its own owner check, which the middleware doesn't currently offer per route. Listing could use R2 `list`, or the plan's optional D1 index.
-4. **What is a snapshot's storage key? (M6)** The plan's `designs/<id>/snapshots/<timestamp>.json` can't be resolved from `/v/<snapshotId>` alone, and timestamps are guessable. Embedding the design ID in the link would expose the live design. A flat key such as `snapshots/<snapshotId>.json` avoids both, but it departs from the plan's layout.
-5. **How do Open Graph tags get served? (M6)** The app is static, and link-preview crawlers don't run JavaScript. `/v/:id` would need a Function that writes per-snapshot tags into `index.html`, and a preview image captured at share time, since the server can't render one.
+1. **How do photo uploads get in? (M4)** No route writes assets, and Functions can't resize images within 10 ms of CPU. Resizing in the browser before upload fits the limits. A new write route gets the owner-only check from `api/_middleware.ts`, but it still needs size and type limits, and uploads shouldn't be able to replace existing assets.
+2. **How is the design list protected? (M5)** `api/_middleware.ts` makes every `GET` public. A `GET /api/designs` list would hand out every live design's ID, which is a read capability, so it needs its own owner check, which the middleware doesn't currently offer per route. Listing could use R2 `list`, or the plan's optional D1 index.
+3. **What is a snapshot's storage key? (M6)** The plan's `designs/<id>/snapshots/<timestamp>.json` can't be resolved from `/v/<snapshotId>` alone, and timestamps are guessable. Embedding the design ID in the link would expose the live design. A flat key such as `snapshots/<snapshotId>.json` avoids both, but it departs from the plan's layout.
+4. **How do Open Graph tags get served? (M6)** The app is static, and link-preview crawlers don't run JavaScript. `/v/:id` would need a Function that writes per-snapshot tags into `index.html`, and a preview image captured at share time, since the server can't render one.
