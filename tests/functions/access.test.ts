@@ -6,6 +6,8 @@ import { onRequest as editorMiddleware } from '../../functions/editor/_middlewar
 import { AUD, call, createEnv, createTestKeys, TEAM_DOMAIN } from './helpers';
 
 const LOCAL_URL = 'http://localhost/api/designs/x';
+const LOCAL_EDITOR_URL = 'http://localhost/editor';
+const PREVIEW_AUD = 'test-preview-aud';
 
 let keys: Awaited<ReturnType<typeof createTestKeys>>;
 beforeAll(async () => {
@@ -14,6 +16,7 @@ beforeAll(async () => {
 });
 
 const envWithKeys = () => createEnv({ ACCESS_TEST_JWKS: keys.jwks }).env;
+const envWithPreview = () => createEnv({ ACCESS_TEST_JWKS: keys.jwks, ACCESS_PREVIEW_AUD: PREVIEW_AUD }).env;
 const withHeader = (token: string, url = LOCAL_URL) =>
   new Request(url, { headers: { 'Cf-Access-Jwt-Assertion': token } });
 
@@ -135,5 +138,36 @@ describe('/editor middleware', () => {
   it('continues with a valid token', async () => {
     const response = await call(editorMiddleware as never, withHeader(await keys.sign(), url), envWithKeys());
     expect(response.status).toBe(299);
+  });
+
+  it('answers 401 for a token from another application', async () => {
+    const token = await keys.sign({ audience: 'someone-else' });
+    expect((await call(editorMiddleware as never, withHeader(token, url), envWithPreview())).status).toBe(401);
+  });
+});
+
+describe('preview deployments', () => {
+  it('opens the editor with a token from the preview Access application', async () => {
+    const token = await keys.sign({ audience: PREVIEW_AUD });
+    const response = await call(editorMiddleware as never, withHeader(token, LOCAL_EDITOR_URL), envWithPreview());
+    expect(response.status).toBe(299);
+  });
+
+  it('does not open the editor with that token when no preview AUD is configured', async () => {
+    const token = await keys.sign({ audience: PREVIEW_AUD });
+    expect((await call(editorMiddleware as never, withHeader(token, LOCAL_EDITOR_URL), envWithKeys())).status).toBe(401);
+  });
+
+  it.each(['PUT', 'POST', 'PATCH', 'DELETE'])('refuses a %s with that token, from header or cookie', async (method) => {
+    const token = await keys.sign({ audience: PREVIEW_AUD });
+    const viaHeader = new Request(LOCAL_URL, { method, headers: { 'Cf-Access-Jwt-Assertion': token } });
+    const viaCookie = new Request(LOCAL_URL, { method, headers: { Cookie: `CF_Authorization=${token}` } });
+    expect((await call(apiMiddleware as never, viaHeader, envWithPreview())).status).toBe(401);
+    expect((await call(apiMiddleware as never, viaCookie, envWithPreview())).status).toBe(401);
+  });
+
+  it('still requires a real signature on a preview-audience token', async () => {
+    const token = new UnsecuredJWT({}).setIssuer(`https://${TEAM_DOMAIN}`).setAudience(PREVIEW_AUD).encode();
+    expect((await call(editorMiddleware as never, withHeader(token, LOCAL_EDITOR_URL), envWithPreview())).status).toBe(401);
   });
 });

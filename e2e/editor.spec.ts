@@ -12,6 +12,7 @@ test('a signed-in owner reaches the editor and can save and load with only the c
   await page.goto('/editor');
   await expect(page.getByRole('heading', { name: 'Editor' })).toBeVisible();
 
+  await page.getByText('API check').click();
   await page.getByRole('button', { name: 'Run save and load check' }).click();
   const result = page.getByTestId('check-result');
   await expect(result).toHaveAttribute('data-ok', 'true');

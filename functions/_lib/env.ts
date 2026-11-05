@@ -4,6 +4,8 @@ export interface Env {
   ACCESS_TEAM_DOMAIN?: string;
   /** Access application AUD tag; comma-separate several. */
   ACCESS_AUD?: string;
+  /** AUD tag of the Access application covering preview deployments. Opens /editor; never authorizes writes. */
+  ACCESS_PREVIEW_AUD?: string;
   /** JWKS JSON for local e2e runs. Only honored when the request host is localhost. */
   ACCESS_TEST_JWKS?: string;
 }

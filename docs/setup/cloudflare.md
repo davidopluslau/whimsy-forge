@@ -66,13 +66,15 @@ ACCESS_TEAM_DOMAIN = "<your-team>.cloudflareaccess.com"
 ACCESS_AUD = "<AUD tag from step 4>"
 ```
 
-These aren't secrets. If either is empty, all writes and `/editor` return 401.
+These aren't secrets. If either is empty, all writes return 401, and so does `/editor` on production. (Step 6 adds a third value, for previews only.)
 
 ## 6. Optional: restrict preview deployments
 
 Preview URLs are public by default, and they read the same bucket as production. To hide them, go to **Workers & Pages > whimsy-forge > Settings > General > Preview access > Restrict previews**. This is turned on for this project.
 
-It creates a separate Access application (**whimsy-forge - Cloudflare Pages**) covering `*.whimsy-forge-cze.pages.dev`, with its own AUD tag. Its default policy lets members of your Cloudflare account in; add the **Editors** policy to it if other editors should see previews too. Previews still can't write, because that AUD isn't in `ACCESS_AUD`. Don't add it there.
+It creates a separate Access application (**whimsy-forge - Cloudflare Pages**) covering `*.whimsy-forge-cze.pages.dev`, with its own AUD tag. Its default policy lets members of your Cloudflare account in; add the **Editors** policy to it if other editors should see previews too.
+
+That AUD is `ACCESS_PREVIEW_AUD` in `wrangler.toml`, which lets `/editor` open on preview URLs so a branch can be reviewed before merging. If you recreate the application, update the value. Previews still can't write, because that AUD isn't in `ACCESS_AUD`, so **Run save and load check** reports `Save failed (401)` on a preview. That's expected. Don't add it to `ACCESS_AUD`: previews share production's bucket.
 
 ## 7. Verify the M0 acceptance criteria
 

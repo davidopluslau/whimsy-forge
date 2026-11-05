@@ -1,46 +1,60 @@
 import { useState } from 'react';
-import { getDesignJson, putDesignJson } from '../api/designs';
-import { createEmptyDesign } from '../model/design';
-import { parseDesign } from '../model/migrate';
+import type { LengthUnit } from '../model/units';
+import { RoomScene } from '../scene/RoomScene';
 import { useDesignStore } from '../store/designStore';
+import { LengthField } from './LengthField';
+import { PlanEditor } from './PlanEditor';
+import { SaveCheck } from './SaveCheck';
 
-type CheckState = { kind: 'idle' | 'running' } | { kind: 'done'; ok: boolean; message: string };
+type ViewMode = 'split' | 'plan' | '3d';
 
-/** Placeholder until M1: proves the signed-in owner can save and load through the API. */
+const VIEW_MODES: { mode: ViewMode; label: string }[] = [
+  { mode: 'split', label: 'Split' },
+  { mode: 'plan', label: 'Plan' },
+  { mode: '3d', label: '3D' },
+];
+
+const UNITS: { unit: LengthUnit; label: string }[] = [
+  { unit: 'm', label: 'Meters' },
+  { unit: 'ft', label: 'Feet' },
+];
+
 export default function EditorPage() {
-  const [check, setCheck] = useState<CheckState>({ kind: 'idle' });
-  const setDesign = useDesignStore((state) => state.setDesign);
-
-  async function runCheck() {
-    setCheck({ kind: 'running' });
-    try {
-      const design = createEmptyDesign('Round-trip check');
-      const sent = JSON.stringify(design);
-      await putDesignJson(design.id, sent);
-      const received = await getDesignJson(design.id);
-      if (received !== sent) {
-        setCheck({ kind: 'done', ok: false, message: 'The loaded design differs from the saved one.' });
-        return;
-      }
-      setDesign(parseDesign(received));
-      setCheck({ kind: 'done', ok: true, message: `Round trip OK for design ${design.id}.` });
-    } catch (error) {
-      setCheck({ kind: 'done', ok: false, message: error instanceof Error ? error.message : String(error) });
-    }
-  }
+  const room = useDesignStore((state) => state.design.room);
+  const setWallHeight = useDesignStore((state) => state.setWallHeight);
+  const [viewMode, setViewMode] = useState<ViewMode>('split');
+  const [unit, setUnit] = useState<LengthUnit>('m');
 
   return (
-    <main className="editor-page">
-      <h1>Editor</h1>
-      <p>The room editor arrives in M1. For now, this page checks that saving and loading work.</p>
-      <button type="button" onClick={runCheck} disabled={check.kind === 'running'}>
-        Run save and load check
-      </button>
-      {check.kind === 'done' && (
-        <p role="status" data-testid="check-result" data-ok={check.ok}>
-          {check.message}
-        </p>
-      )}
+    <main className="editor" data-view-mode={viewMode}>
+      <header className="editor__header">
+        <h1>Editor</h1>
+        <div className="segmented" role="group" aria-label="View">
+          {VIEW_MODES.map(({ mode, label }) => (
+            <button key={mode} type="button" aria-pressed={viewMode === mode} onClick={() => setViewMode(mode)}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="segmented" role="group" aria-label="Units">
+          {UNITS.map((option) => (
+            <button key={option.unit} type="button" aria-pressed={unit === option.unit} onClick={() => setUnit(option.unit)}>
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <LengthField label="Wall height" meters={room.wallHeight} unit={unit} onCommit={setWallHeight} />
+        <SaveCheck />
+      </header>
+      {/* Both panes stay mounted, so switching views keeps a half-drawn wall and the 3D camera. */}
+      <div className="editor__panes">
+        <section className="editor__pane editor__pane--plan" aria-label="Floor plan">
+          <PlanEditor unit={unit} />
+        </section>
+        <section className="editor__pane editor__pane--scene" aria-label="3D view" data-testid="room-scene" data-wall-count={room.walls.length}>
+          <RoomScene room={room} />
+        </section>
+      </div>
     </main>
   );
 }

@@ -4,6 +4,8 @@
   --ink: #2b2723;
   --muted: #6d665d;
   --accent: #8a4b2a;
+  --line: #d4cdc1;
+  --danger: #b3261e;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   color: var(--ink);
   background: var(--bg);
@@ -15,6 +17,8 @@
     --ink: #f0ebe3;
     --muted: #aaa297;
     --accent: #e0a07a;
+    --line: #443e37;
+    --danger: #f2877f;
   }
 }
 
@@ -80,21 +84,135 @@ a {
   color: var(--muted);
 }
 
-.editor-page {
-  max-width: 40rem;
-  margin: 0 auto;
-  padding: 32px 16px;
-  line-height: 1.5;
+.editor {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+  font-size: 0.875rem;
 }
 
-.editor-page h1 {
-  margin-top: 0;
-  font-size: 1.5rem;
-}
-
-.editor-page button {
-  padding: 10px 16px;
+.editor button,
+.editor input[type='text'] {
   font: inherit;
+  color: inherit;
+}
+
+.editor__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.editor__header h1 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.editor__panes {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.editor__pane {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+}
+
+.editor__pane--plan {
+  border-right: 1px solid var(--line);
+}
+
+.editor[data-view-mode='plan'] .editor__pane--scene,
+.editor[data-view-mode='3d'] .editor__pane--plan {
+  display: none;
+}
+
+.editor__pane--scene canvas {
+  display: block;
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.segmented button {
+  padding: 6px 12px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.segmented button + button {
+  border-left: 1px solid var(--line);
+}
+
+.segmented button[aria-pressed='true'] {
+  color: var(--bg);
+  background: var(--accent);
+}
+
+.field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.field input[type='text'] {
+  width: 7.5em;
+  padding: 5px 8px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.field input[aria-invalid='true'] {
+  border-color: var(--danger);
+  outline-color: var(--danger);
+}
+
+.button-quiet {
+  padding: 5px 10px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.save-check {
+  margin-left: auto;
+  position: relative;
+  color: var(--muted);
+}
+
+.save-check summary {
+  cursor: pointer;
+}
+
+.save-check__body {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 1;
+  width: 18rem;
+  padding: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.save-check__body button {
+  padding: 6px 12px;
   color: var(--bg);
   background: var(--accent);
   border: 0;
@@ -102,7 +220,138 @@ a {
   cursor: pointer;
 }
 
-.editor-page button:disabled {
+.save-check__body button:disabled {
   opacity: 0.6;
   cursor: progress;
+}
+
+.save-check__body p {
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.plan {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* Fixed heights: the plan's origin follows the canvas center, so the canvas must not resize mid-draw. */
+.plan__bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 16px;
+  height: 46px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+.plan__bar--bottom {
+  height: 64px;
+  border-top: 1px solid var(--line);
+}
+
+.plan__status {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0 0 0 auto;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.plan__hint {
+  display: -webkit-box;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  color: var(--muted);
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+.plan__canvas {
+  flex: 1;
+  display: block;
+  width: 100%;
+  min-height: 0;
+  border-top: 1px solid var(--line);
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+
+.plan[data-tool='select'] .plan__canvas {
+  cursor: default;
+}
+
+.plan__grid {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1;
+  opacity: 0.45;
+}
+
+.plan__grid--major {
+  opacity: 1;
+}
+
+.plan__floor {
+  fill: var(--accent);
+  opacity: 0.14;
+}
+
+.plan__wall {
+  fill: var(--ink);
+}
+
+.plan__wall--selected {
+  fill: var(--accent);
+}
+
+.plan__corner {
+  fill: var(--bg);
+  stroke: var(--ink);
+  stroke-width: 1.5;
+}
+
+.plan__dimension {
+  fill: var(--ink);
+  font-size: 12px;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+}
+
+.plan__dimension--preview {
+  fill: var(--accent);
+  font-weight: 600;
+  text-anchor: start;
+}
+
+.plan__preview {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+}
+
+.plan__anchor {
+  fill: var(--accent);
+}
+
+.plan__snap {
+  fill: var(--accent);
+  pointer-events: none;
+}
+
+.plan__snap--endpoint {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
 }

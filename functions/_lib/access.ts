@@ -31,12 +31,25 @@ function tokenFrom(request: Request): string | undefined {
 }
 
 /** True only for a validly signed Access token for this application. Fails closed. */
-export async function isAuthorized(request: Request, env: Env): Promise<boolean> {
+export function isAuthorized(request: Request, env: Env): Promise<boolean> {
+  return hasValidToken(request, env, env.ACCESS_AUD ?? '');
+}
+
+/**
+ * Like `isAuthorized`, but also accepts the preview deployments' Access application. Only for
+ * opening the editor page: its token must never authorize a write, because previews share
+ * production's bucket.
+ */
+export function canOpenEditor(request: Request, env: Env): Promise<boolean> {
+  return hasValidToken(request, env, `${env.ACCESS_AUD ?? ''},${env.ACCESS_PREVIEW_AUD ?? ''}`);
+}
+
+async function hasValidToken(request: Request, env: Env, audiences: string): Promise<boolean> {
   const token = tokenFrom(request);
   if (!token) return false;
 
   const teamDomain = env.ACCESS_TEAM_DOMAIN?.trim() ?? '';
-  const audience = (env.ACCESS_AUD ?? '').split(',').map((aud) => aud.trim()).filter(Boolean);
+  const audience = audiences.split(',').map((aud) => aud.trim()).filter(Boolean);
   if (!TEAM_DOMAIN.test(teamDomain) || audience.length === 0) {
     console.error('ACCESS_TEAM_DOMAIN or ACCESS_AUD is missing or malformed; denying request.');
     return false;
