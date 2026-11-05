@@ -4,6 +4,7 @@ import { Component, type ReactNode, Suspense, useEffect, useMemo } from 'react';
 import { SRGBColorSpace } from 'three';
 import type { Item, Vec3 } from '../model/design';
 import type { ItemImage } from '../model/items';
+import { CAPTURE_HIDDEN } from './capture';
 
 const PLACEHOLDER_COLOR = '#c9c2b4';
 const FRAME_COLOR = '#3b3026';
@@ -119,7 +120,7 @@ export function ItemMesh({ item, image, overlapping, onSelect }: ItemMeshProps) 
         <Suspense fallback={<Placeholder size={item.size} />}>{content}</Suspense>
       </ItemBoundary>
       {overlapping && item.mount === 'floor' && (
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.004, 0]}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.004, 0]} userData={CAPTURE_HIDDEN}>
           <planeGeometry args={[item.size[0], item.size[2]]} />
           <meshBasicMaterial color={OVERLAP_COLOR} transparent opacity={0.45} depthWrite={false} />
         </mesh>

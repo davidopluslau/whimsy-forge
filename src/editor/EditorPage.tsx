@@ -5,6 +5,7 @@ import type { Item, Vec2 } from '../model/design';
 import { generateId } from '../model/ids';
 import * as items from '../model/items';
 import type { LengthUnit } from '../model/units';
+import type { SceneCapture } from '../scene/capture';
 import type { GizmoMode } from '../scene/ItemGizmo';
 import { type FloorPicker, RoomScene, type SceneEditing } from '../scene/RoomScene';
 import { useDesignStore } from '../store/designStore';
@@ -16,6 +17,7 @@ import { LengthField } from './LengthField';
 import { PlanEditor } from './PlanEditor';
 import type { PhotoUpload } from './photo';
 import { SaveIndicator } from './SaveIndicator';
+import { ShareControls } from './ShareControls';
 
 type ViewMode = 'split' | 'plan' | '3d';
 
@@ -79,6 +81,7 @@ export default function EditorPage({ saver }: { saver: Autosaver }) {
   const [gizmo, setGizmo] = useState<GizmoMode>('move');
   const [notice, setNotice] = useState<string | null>(null);
   const pickFloor = useRef<FloorPicker | null>(null);
+  const capture = useRef<SceneCapture | null>(null);
 
   const selectedItem = designItems.find((item) => item.id === selectedItemId) ?? null;
   // Only furniture on the floor can overlap. Rugs are meant to sit under things, and pictures hang on walls.
@@ -232,6 +235,7 @@ export default function EditorPage({ saver }: { saver: Autosaver }) {
         <button type="button" className="button-quiet" aria-pressed={catalogOpen} onClick={() => setCatalogOpen((open) => !open)}>
           Catalog
         </button>
+        <ShareControls capture={capture} />
       </header>
       {/* Both panes stay mounted, so switching views keeps a half-drawn wall and the 3D camera. */}
       <div className="editor__panes">
@@ -305,7 +309,7 @@ export default function EditorPage({ saver }: { saver: Autosaver }) {
               {notice}
             </p>
           )}
-          <RoomScene room={room} items={designItems} catalog={catalogById} overlapping={overlapping} editing={editing} />
+          <RoomScene room={room} items={designItems} catalog={catalogById} overlapping={overlapping} editing={editing} capture={capture} />
         </section>
       </div>
     </main>

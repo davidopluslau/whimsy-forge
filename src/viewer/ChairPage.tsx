@@ -1,23 +1,8 @@
-import { Component, useCallback, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { ChairScene } from '../scene/ChairScene';
+import { SceneErrorBoundary } from './SceneErrorBoundary';
 
 type SceneState = 'loading' | 'ready' | 'error';
-
-class SceneErrorBoundary extends Component<{ onError: () => void; children: ReactNode }, { failed: boolean }> {
-  override state = { failed: false };
-
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-
-  override componentDidCatch() {
-    this.props.onError();
-  }
-
-  override render() {
-    return this.state.failed ? null : this.props.children;
-  }
-}
 
 export default function ChairPage() {
   const [sceneState, setSceneState] = useState<SceneState>('loading');

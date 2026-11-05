@@ -1,5 +1,7 @@
 export interface Env {
   BUCKET: R2Bucket;
+  /** The site's static files. Pages provides it; `/v/:id` reads the app's page through it. */
+  ASSETS: Fetcher;
   /** Full Access team domain, e.g. `myteam.cloudflareaccess.com`. */
   ACCESS_TEAM_DOMAIN?: string;
   /** Access application AUD tag; comma-separate several. */

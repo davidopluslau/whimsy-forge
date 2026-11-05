@@ -1,6 +1,6 @@
 # Whimsy Forge — System Design
 
-**Reflects:** `main` through M5 (Persistence).
+**Reflects:** `main` through M6 (Sharing).
 
 This document describes the system **as built**. For why the project exists, its requirements and its roadmap, see [PLAN.md](PLAN.md). For one milestone's scope, see [milestones/](milestones/). If this document and the code disagree, the code is right and this document has a bug: fix it.
 
@@ -38,12 +38,12 @@ How to edit:
 
 ## System overview
 
-One owner edits designs on a desktop browser. Anyone with a share link will be able to view a design without an account (M6). The app is a single-page React app on Cloudflare Pages, with a thin Functions API in front of one R2 bucket. All geometry is computed in the browser from a small JSON document.
+One owner edits designs on a desktop browser. Anyone with a share link can view a frozen copy of a design without an account. The app is a single-page React app on Cloudflare Pages, with a thin Functions API in front of one R2 bucket. All geometry is computed in the browser from a small JSON document.
 
 ```mermaid
 flowchart LR
     owner["Owner's browser<br/>/editor"]
-    public["Public browser<br/>/"]
+    public["Public browser or crawler<br/>/, /v/:id"]
 
     subgraph cf["Cloudflare"]
         access["Access<br/>guards /editor at the edge"]
@@ -53,18 +53,23 @@ flowchart LR
             apiGuard["api/_middleware<br/>token check on writes"]
             designList["api/designs<br/>token check on reads too"]
             designs["api/designs/:id"]
+            snapshots["api/snapshots/:id"]
             assets["api/assets/*"]
             catalog["api/catalog"]
+            sharePage["v/:id<br/>the app's page + link-preview tags"]
         end
-        r2[("R2 bucket: whimsy-forge<br/>designs/, assets/, catalog.json")]
+        r2[("R2 bucket: whimsy-forge<br/>designs/, snapshots/, assets/, catalog.json")]
     end
 
     owner --> access --> editorGuard --> pages
     public --> pages
+    public --> sharePage --> pages
+    sharePage --> r2
     owner --> apiGuard
     public --> apiGuard
     apiGuard --> designList --> r2
     apiGuard --> designs --> r2
+    apiGuard --> snapshots --> r2
     apiGuard --> assets --> r2
     apiGuard --> catalog --> r2
 ```
@@ -87,6 +92,7 @@ Changing any of these is a major decision, and must be recorded here.
 - **Units are meters** in all code and stored data. Only `src/model/units.ts` and the UI deal in feet.
 - **Every edit to the room or items is one undo step,** and undo and redo restore them exactly. A pointer gesture (including a gizmo drag) is one step: its edits apply at once and are recorded at the end. A design's name isn't part of the history.
 - **Saved work is never silently overwritten.** Autosaves are conditional on the stored version they were edited from, and a mismatch stops saving until the owner chooses. Opening a design never writes it, unless it restores unsaved work.
+- **A shared snapshot never changes, and never carries the live design's ID.** The server refuses to replace one, and a snapshot's `id` must equal its own ID, because a live design's ID is enough to read that design and all its future edits.
 - **A design from a newer schema is never opened or rewritten** by a build that can't read it. Every load goes through `migrate`, and old documents stay readable through its steps, which are pure and tested against a frozen v1 fixture.
 - **`src/model/` holds pure domain logic.** It imports nothing from Three.js, React or Zustand, so it can be tested in Node.
 - **Editing functions are pure and refuse invalid edits.** A function such as `setWallLength(room, …)` returns a new `Room`, or the *same object* if the edit is not allowed. The store relies on that identity check to detect a refusal.
@@ -101,9 +107,9 @@ Changing any of these is a major decision, and must be recorded here.
 ```mermaid
 flowchart TD
     app["App.tsx<br/>route by pathname, lazy chunks"]
-    editor["editor/<br/>DesignListPage, EditorRoute, EditorPage, PlanEditor,<br/>SaveIndicator, CatalogPanel, PhotoForm, fields"]
-    viewer["viewer/<br/>ChairPage"]
-    scene["scene/<br/>RoomScene, ItemMesh, ItemGizmo, roomGeometry,<br/>AssetPreview, ChairScene"]
+    editor["editor/<br/>DesignListPage, EditorRoute, EditorPage, PlanEditor,<br/>SaveIndicator, ShareControls, CatalogPanel, PhotoForm, fields"]
+    viewer["viewer/<br/>SnapshotPage, ChairPage"]
+    scene["scene/<br/>RoomScene, ItemMesh, ItemGizmo, roomGeometry,<br/>cameraViews, capture, AssetPreview, ChairScene"]
     store["store/<br/>designStore (Zustand, undo history),<br/>autosave, drafts"]
     api["api/<br/>fetch client"]
     model["model/<br/>Design types, room, openings, items, catalog,<br/>materials, migrate, ids, units"]
@@ -118,6 +124,8 @@ flowchart TD
     editor --> api
     editor --> model
     viewer --> scene
+    viewer --> api
+    viewer --> model
     scene --> model
     store --> model
     api --> model
@@ -128,8 +136,9 @@ flowchart TD
 
 Dependencies point one way, toward `model`.
 
-- **`scene/` does not read the store.** `RoomScene` takes `room` and `items` as props, so the read-only viewer can reuse it without any editing code. The editing props (`editing`, selection, gizmo callbacks) are optional and only the editor passes them.
-- **`App.tsx` routes on `window.location.pathname`,** with no router library: `/editor` is the design list, `/editor/new` creates a design and replaces itself in the address bar with `/editor/<id>`, `/editor/<id>` opens one, and every other path shows the M0 chair page. Moving between the list and the editor is a full page load. Unknown paths reach the app because Pages falls back to `index.html`.
+- **`scene/` does not read the store.** `RoomScene` takes `room` and `items` as props, so the read-only viewer can reuse it without any editing code. The editing props (`editing`, selection, gizmo callbacks) are optional and only the editor passes them. The viewer has its own: `viewRequest`, `onOrbitStart` and `capture`.
+- **The viewer has no store and no editing code.** `SnapshotPage` holds its design in component state and never writes.
+- **`App.tsx` routes on `window.location.pathname`,** with no router library: `/v/<id>` is the read-only viewer, `/editor` is the design list, `/editor/new` creates a design and replaces itself in the address bar with `/editor/<id>`, `/editor/<id>` opens one, and every other path shows the M0 chair page. Moving between the list and the editor is a full page load. Unknown paths reach the app because Pages falls back to `index.html`.
 - **Pages are lazy chunks,** which keeps Three.js out of the entry chunk and out of the design list.
 - **`store/` doesn't call the API.** `Autosaver` is given its `put` and draft functions, and `editor/EditorRoute.tsx` wires them to `api/` and to the store.
 
@@ -137,7 +146,7 @@ Dependencies point one way, toward `model`.
 
 Types are in `src/model/design.ts`, `src/model/catalog.ts` and `src/model/materials.ts`. `PLAN.md` has the original sketch; the code is authoritative.
 
-- **Design:** `schemaVersion` (currently 1, from `CURRENT_SCHEMA_VERSION`), `id`, `name`, `updatedAt`, `room`, `items`, `cameras`. `cameras` is defined and always empty until M6.
+- **Design:** `schemaVersion` (currently 1, from `CURRENT_SCHEMA_VERSION`), `id`, `name`, `updatedAt`, `room`, `items`, `cameras`. `cameras` stays empty on a live design. On a snapshot it holds the view the owner shared from, unless the 3D pane was hidden, and it needed no schema change. The other camera presets are worked out from the room (`src/scene/cameraViews.ts`), not stored.
 - **Item:** `id`, `assetId`, `position`, `rotationY`, `size`, `mount` (`floor`, `wall` or `ceiling`), optional `wallId` for a wall item. `position` is the bottom center, and `size` is the footprint in meters, copied at placement so geometry never needs the catalog. `materialOverrides` is defined and not used yet. A photo's `assetId` is `photo:<uploadId>`, and its image is an upload rather than a catalog entry.
 - **Room:** `wallHeight`, `walls`, `openings`, optional `floorMaterialId`.
 - **Wall:** `start` and `end` in plan coordinates, `thickness`, optional `materialId`.
@@ -188,6 +197,7 @@ sequenceDiagram
 - **Openings follow their walls.** Edits to walls and wall height run `refitOpenings`, which refuses the edit if an opening can no longer fit. Removing a wall removes its openings.
 - **Geometry is cached per wall.** `buildRoomGeometry` runs on every change, including each pointer move while dragging, so walls are keyed on their inputs and only the wall that changed is cut again with CSG. A material isn't an input, so changing one rebuilds nothing.
 - **Rendering is on demand** (`frameloop="demand"`). Anything that changes the picture outside React's props must call `invalidate()`.
+- **Saving a picture doesn't use `preserveDrawingBuffer`,** which would slow every frame on a phone. `renderToCanvas` (`src/scene/capture.ts`) resizes the renderer, draws once with its own camera, copies to a 2D canvas, then restores the size and redraws, all in one task, so nothing flickers. It works at any size and with the pane hidden. Objects with `CAPTURE_HIDDEN` in `userData` (the gizmo and overlap warnings) are left out, so anything else editor-only that's drawn in the scene needs it too.
 - **Textures** load through `/api/assets/*` and are cached for the session per material. The surface shows the material's plain color until they arrive, and stays that way if they fail.
 - **Lighting** uses local drei `Lightformer`s rather than a fetched HDRI, so scenes make no third-party requests.
 
@@ -210,6 +220,36 @@ flowchart LR
 - **The undo history isn't persisted.** A reload starts with an empty history.
 - **The design list** (`DesignListPage`) reads `GET /api/designs`. Rename and duplicate are done in the browser, as a load through `parseDesign`, a change and a save, so both refuse a design from a newer schema. Deleting one is allowed. A copy shares its uploads with the original, which is safe because uploads are never deleted.
 
+## Sharing
+
+```mermaid
+sequenceDiagram
+    participant Owner as Editor (ShareControls)
+    participant API as Functions
+    participant R2
+    participant Crawler as Link-preview crawler
+    participant Viewer as Viewer (SnapshotPage)
+
+    Owner->>Owner: new snapshot id, capture 1200×630 JPEG
+    Owner->>API: PUT /api/snapshots/:id/preview
+    API->>R2: assets/snapshots/:id.jpg
+    Owner->>API: PUT /api/snapshots/:id (snapshotOf the design)
+    API->>R2: snapshots/:id.json, name as metadata
+    Owner->>Owner: copy /v/:id
+    Crawler->>API: GET /v/:id
+    API->>R2: head both objects
+    API-->>Crawler: the app's page + og: tags
+    Viewer->>API: GET /api/snapshots/:id
+    API-->>Viewer: stored bytes, then parseDesign → migrate
+```
+
+- **A snapshot is a copy of the design in the browser's store,** including edits not saved yet, under its own ID (`snapshotOf` in `src/model/design.ts`). Each Share makes a new snapshot and link, and earlier links keep working. Deleting the design leaves its snapshots.
+- **A snapshot is loaded like any design,** through `parseDesign` → `migrate`, so old links keep opening after schema changes. It isn't rewritten: the migration runs on each view.
+- **The preview goes first, and is optional.** A link is complete from the moment it exists. If the preview fails, the share goes ahead and the link posts without a picture.
+- **Link-preview tags are written by a Function,** `functions/v/[id].ts`, because crawlers don't run JavaScript. It fetches the app's page through the `ASSETS` binding and adds tags. It reads only R2 metadata and never parses the document, to stay well inside the CPU limit. A missing snapshot gets the plain page with status 404, and a storage failure gets the plain page with status 200, so the app can report it. Each page is marked `noindex`.
+- **Camera presets:** the viewer opens at the shared view, if any, and offers Overview, Top and, for a closed room, Eye level. Views are worked out for the canvas's shape: on a portrait phone, a shared view from outside the room moves back along its line to fit, and one from inside stays put.
+- **Export image** is in both the editor and the viewer. It saves a PNG of the current view, at least 1920 px on its longest side. In the editor with the 3D pane hidden, it saves a framed overview at 16:9.
+
 ## API
 
 All routes are in `functions/`. Responses are same-origin, so there is no CORS.
@@ -220,7 +260,11 @@ All routes are in `functions/`. Responses are same-origin, so there is no CORS.
 | `GET /api/designs/:id` | Public | The stored bytes with `Cache-Control: no-store` and an `ETag`. 400 for a malformed ID, 404 if absent. |
 | `PUT /api/designs/:id` | Owner, same origin | Stores the received bytes as they are, and returns 204 with the new `ETag`. With `If-Match`, it stores only if that is still the current tag, and otherwise returns 412, including when the design was deleted. Without it, the write is unconditional. 400 for bad UTF-8 or JSON, a body `id` that doesn't match the URL, or a missing numeric `schemaVersion`. 413 over 1 MiB. |
 | `DELETE /api/designs/:id` | Owner, same origin | Removes the design and returns 204, even if it was already gone. 400 for a malformed ID. |
-| `GET /api/assets/*` | Public | Objects under the `assets/` prefix only, with a one-day browser cache, `ETag` and 304 support. Uploaded photos are served here too. |
+| `GET /api/snapshots/:id` | Public | The stored bytes with a one-day browser cache, `ETag` and 304 support. 400 for a malformed ID, 404 if absent. |
+| `PUT /api/snapshots/:id` | Owner, same origin | Stores the received bytes as they are, with the name as metadata, and returns 201. 409 if the ID is taken: it never replaces a snapshot. Otherwise validated as `PUT /api/designs/:id` is, so the body's `id` must be the snapshot's. |
+| `PUT /api/snapshots/:id/preview` | Owner, same origin | Stores one JPEG at `assets/snapshots/<id>.jpg` and returns 201. 400 for a malformed ID, 415 unless the type is `image/jpeg` and the bytes are a JPEG, 413 over 2 MiB, 409 if the ID is taken. |
+| `GET /v/:id` | Public | The app's page, with link-preview tags if the snapshot exists. `no-cache` and status 200, or `no-store` and status 404 if it doesn't. |
+| `GET /api/assets/*` | Public | Objects under the `assets/` prefix only, with a one-day browser cache, `ETag` and 304 support. Uploaded photos and snapshot previews are served here too. |
 | `PUT /api/uploads/:id` | Owner, same origin | Stores one WebP photo at `assets/uploads/<id>.webp` and returns 201 with its `path`. 400 for a malformed ID, 415 unless the type is `image/webp` and the bytes are a WebP file, 413 over 2 MiB, 409 if the ID is taken. It never replaces an existing upload. |
 | `GET /api/catalog` | Public | The bucket's `catalog.json` with `Cache-Control: no-cache`, `ETag` and 304 support, so a new import shows up at once. 404 before the bucket is seeded. |
 | Any other `/api/*` | Same check as above by method | JSON 404 from `functions/api/[[path]].ts`, so it doesn't fall through to `index.html`. |
@@ -242,12 +286,14 @@ flowchart TD
     token -->|"Yes"| origin{"Origin absent<br/>or same origin?"}
     origin -->|"No"| e403["403"]
     origin -->|"Yes"| handler["Route handler"]
+    path -->|"/v/:id"| share["Public: the app's page<br/>with link-preview tags"]
     path -->|"Everything else"| static["Public static assets"]
 ```
 
 - **Why `/api` is outside Access:** Access matches paths, not methods, so covering `/api` would put public reads behind a login too. The Function verifies the token on writes instead, using the `CF_Authorization` cookie set when the owner signs in at `/editor`. This depends on Access's **Enforce cookie path attribute** staying off.
 - **The Origin check exists because the token can arrive as a cookie,** which a browser would otherwise attach to a write started by another site.
-- **Reading a design is a capability, not a right.** `GET /api/designs/:id` is public, so whoever knows a live design's ID can read it and its future edits. Never expose that ID in a share link.
+- **Reading a design is a capability, not a right.** `GET /api/designs/:id` is public, so whoever knows a live design's ID can read it and its future edits. A share link and everything the viewer fetches use the snapshot's ID instead, which reads only that frozen copy.
+- **Viewer routes need no Access changes.** The production Access application covers only `/editor`, so `/v/*` and the snapshot reads are public there. Restricted previews cover the whole hostname, so on a preview a share link needs a login, and Share itself fails with 401 because previews can't write.
 - **The design list is the one read that needs a token,** because it hands out every live design's ID. The handler (`functions/api/designs/index.ts`) checks it itself, since `api/_middleware.ts` passes every GET.
 - **Preview deployments can't write.** They share production's bucket. Their Access application's AUD (`ACCESS_PREVIEW_AUD`) opens `/editor` and lists designs for review, but is never accepted for writes. On a preview the editor works and shows **Not saved: signed out**, and edits stay in that origin's local draft. Never add it to `ACCESS_AUD`.
 - **`ACCESS_TEST_JWKS`** substitutes a local key set for e2e runs, and is honored only when the request host is `localhost` or `127.0.0.1`.
@@ -258,11 +304,15 @@ flowchart TD
 | R2 key | Written by | Read through |
 | --- | --- | --- |
 | `designs/<id>.json`, with `name` and `updatedAt` as custom metadata | `PUT /api/designs/:id` | `GET /api/designs/:id`, and `GET /api/designs` through R2 `list` |
+| `snapshots/<id>.json`, with `name` and `updatedAt` as custom metadata | `PUT /api/snapshots/:id` | `GET /api/snapshots/:id`, and `GET /v/:id` for the metadata |
+| `assets/snapshots/<id>.jpg` | `PUT /api/snapshots/:id/preview` | `GET /api/assets/snapshots/<id>.jpg` |
 | `assets/<assetId>/<file>` | `scripts/import-asset.ts`, `scripts/seed-r2.mjs` | `GET /api/assets/*` |
 | `assets/uploads/<id>.webp` | `PUT /api/uploads/:id` | `GET /api/assets/uploads/<id>.webp` |
 | `catalog.json` | `scripts/import-asset.ts`, `scripts/seed-r2.mjs` | `GET /api/catalog` |
 
 There is no database. D1 is an option in the plan but isn't used: the list is one R2 `list` call with custom metadata, so it reads no documents and has no index to keep in step. The name in the metadata is percent-encoded and cut to 100 code points to stay inside R2's 2 KiB limit. An object saved before M5 has no metadata, so the list shows it as unnamed, with its upload time.
+
+**Snapshots use a flat key,** which departs from PLAN.md's `designs/<id>/snapshots/<timestamp>.json`: that key can't be found from `/v/<snapshotId>` alone, its timestamp is guessable, and putting the design's ID in the link would expose the live design. The flat prefix also keeps snapshots out of the design list's R2 `list`.
 
 **Uploads** are the photos behind pictures and rugs. The browser shrinks each to 1600 px on its longest side and re-encodes it as WebP before upload, so the 2 MiB cap is a ceiling. Only items refer to an upload, and nothing deletes one yet.
 
@@ -298,7 +348,7 @@ flowchart LR
 | End to end | Playwright (`e2e/`) | A fresh build on the real Pages runtime (workerd) with local R2. Every seed model is loaded in the browser and measured, and one test runs the real import command |
 
 - **Access in e2e:** `playwright.config.ts` generates a throwaway RSA key each run, and `e2e/access-token.ts` signs short-lived tokens with it, so the real verification path is exercised.
-- **Browsers:** a desktop project runs every spec and a phone project runs the chair spec. Both use software WebGL, so no GPU is needed: SwiftShader by default, or the ANGLE backend named by `E2E_ANGLE`.
+- **Browsers:** a desktop project runs every spec and a phone project runs the chair and share specs. Both use software WebGL, so no GPU is needed: SwiftShader by default, or the ANGLE backend named by `E2E_ANGLE`.
 - **CI** (`.github/workflows/ci.yml`) runs build, unit tests and e2e on pushes to `main` and on pull requests. Its e2e step installs Mesa and sets `E2E_ANGLE=gl-egl` to render with llvmpipe, because SwiftShader with two workers overloads the runner until tests time out.
 - **Deploys** use Pages' Git integration: `main` goes to production (`whimsy-forge-cze.pages.dev`), and other branches go to Access-restricted previews (`<branch>.whimsy-forge-cze.pages.dev`).
 - **Scripts** are TypeScript run directly by Node 22.18+ with type stripping, and type-checked by `tsconfig.node.json`. `scripts/seed-r2.mjs` uses `wrangler r2 bulk put`, grouped by content type, to keep the e2e server's start within its timeout.
@@ -310,7 +360,10 @@ flowchart LR
 | --- | --- | --- |
 | Designs written by the old save check remain in the production bucket, shown as unnamed | Small; delete them from the list | Owner, once |
 | A draft of a design deleted from another browser stays in this browser's storage, and can recreate the design if this browser opens its address | One owner, usually one browser | Not planned |
-| `/` shows the M0 chair page, and `/v/*` does too | No viewer yet | M6 |
+| `/` shows the M0 chair page | Nothing else needs that address yet | Not planned yet |
+| A share link can't be revoked from the app, and snapshots are never deleted, even with their design | Links are unguessable, and each snapshot is small. To revoke one, delete its two objects in the R2 dashboard; a browser that has it may keep it for up to a day | Not planned yet |
+| A snapshot freezes the document, not the assets it refers to. Replacing an asset at the same key or removing it from the catalog changes what old links show | Assets rarely change, and a missing one shows as a box of the right size | Use a new asset ID instead of `--replace` |
+| A failed Share can leave an unused preview image in storage | Small and unreachable without its random ID | Not planned |
 | Replacing an asset at the same key can be stale in browsers for up to a day | Assets rarely change | Use a new asset ID instead of `--replace` |
 | An import from a stale checkout overwrites the bucket's `catalog.json` with that checkout's list | One owner, one machine; `seed/` is committed after each import | Not planned |
 | `seed/` holds finished binaries in git | Small so far, and it lets e2e and `seed:remote` run with no other source | Move out of git if it grows large |
@@ -325,12 +378,10 @@ flowchart LR
 
 | Milestone | Adds | Notes for the implementer |
 | --- | --- | --- |
-| M6 Sharing | Snapshots, `/v/<id>` viewer, image export, Open Graph tags | See questions 3 and 4. `RoomScene` can be reused because it takes props. Image export needs a look at `frameloop="demand"` and `preserveDrawingBuffer`. |
 | M7 Polish | HDRI, soft shadows, lamps, phone budget | An HDRI should be self-hosted in R2 to keep scenes free of third-party requests. Budget: textures up to 2048 px, roughly 30 MB per design. |
 
 ## Open design questions
 
 Gaps between [PLAN.md](PLAN.md) and the architecture as built. Remove each one when it is decided, and record the outcome above.
 
-3. **What is a snapshot's storage key? (M6)** The plan's `designs/<id>/snapshots/<timestamp>.json` can't be resolved from `/v/<snapshotId>` alone, and timestamps are guessable. Embedding the design ID in the link would expose the live design. A flat key such as `snapshots/<snapshotId>.json` avoids both, but it departs from the plan's layout.
-4. **How do Open Graph tags get served? (M6)** The app is static, and link-preview crawlers don't run JavaScript. `/v/:id` would need a Function that writes per-snapshot tags into `index.html`, and a preview image captured at share time, since the server can't render one.
+None at the moment.

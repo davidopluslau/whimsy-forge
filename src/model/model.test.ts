@@ -1,6 +1,35 @@
 import { describe, expect, it } from 'vitest';
-import { cleanDesignName, copiedDesign, createEmptyDesign, MAX_DESIGN_NAME_LENGTH, renamedDesign } from './design';
+import { cleanDesignName, copiedDesign, createEmptyDesign, MAX_DESIGN_NAME_LENGTH, renamedDesign, snapshotOf } from './design';
 import { generateId, isDesignId } from './ids';
+
+describe('snapshotOf', () => {
+  const design = createEmptyDesign('Kitchen');
+  design.room.walls.push({ id: 'w', start: [0, 0], end: [1, 0], thickness: 0.1 });
+  const SNAPSHOT_ID = generateId();
+  const view = { position: [1, 2, 3] as [number, number, number], target: [0, 1, 0] as [number, number, number] };
+
+  it("never carries the live design's id, which would let a viewer read the design", () => {
+    const snapshot = snapshotOf(design, SNAPSHOT_ID, view);
+    expect(snapshot.id).toBe(SNAPSHOT_ID);
+    expect(JSON.stringify(snapshot)).not.toContain(design.id);
+  });
+
+  it('keeps what the design shows, and records where the owner was looking', () => {
+    const snapshot = snapshotOf(design, SNAPSHOT_ID, view);
+    expect(snapshot.name).toBe('Kitchen');
+    expect(snapshot.room).toEqual(design.room);
+    expect(snapshot.cameras).toEqual([{ name: 'Shared view', ...view }]);
+    expect(snapshotOf(design, SNAPSHOT_ID, null).cameras).toEqual([]);
+  });
+
+  it('is independent of the design, which keeps changing', () => {
+    const before = structuredClone(design);
+    const snapshot = snapshotOf(design, SNAPSHOT_ID, view);
+    expect(design).toEqual(before);
+    expect(snapshot.room.walls).not.toBe(design.room.walls);
+    expect(snapshot.room.walls[0]).not.toBe(design.room.walls[0]);
+  });
+});
 
 describe('ids', () => {
   it('generates distinct 22-character URL-safe ids', () => {

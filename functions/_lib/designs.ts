@@ -1,11 +1,49 @@
 import { isDesignId } from '../../src/model/ids';
+import { jsonError } from './env';
 
 const PREFIX = 'designs/';
 const SUFFIX = '.json';
 /** Comfortably under R2's 2 KiB custom metadata limit: at most 12 bytes per encoded code point. */
 const MAX_NAME_CODE_POINTS = 100;
+const MAX_DESIGN_BYTES = 1024 * 1024;
 
 export const designKey = (id: string) => `${PREFIX}${id}${SUFFIX}`;
+
+export type DesignEnvelope = { name?: unknown; updatedAt?: unknown };
+
+function validate(text: string, id: string): { problem: string } | { doc: DesignEnvelope } {
+  let doc: unknown;
+  try {
+    doc = JSON.parse(text);
+  } catch {
+    return { problem: 'Body is not valid JSON' };
+  }
+  if (typeof doc !== 'object' || doc === null || Array.isArray(doc)) return { problem: 'Body must be a JSON object' };
+  const { id: docId, schemaVersion } = doc as Record<string, unknown>;
+  if (docId !== id) return { problem: 'Body id does not match the URL' };
+  if (typeof schemaVersion !== 'number') return { problem: 'Body is missing schemaVersion' };
+  return { doc };
+}
+
+/**
+ * Reads a design document from a request and checks its envelope, not its contents. Answers with the
+ * error Response to send if it isn't acceptable. Store `bytes`, not a re-serialization, so a load
+ * returns exactly what was saved.
+ */
+export async function readDesignBody(request: Request, id: string): Promise<Response | { bytes: ArrayBuffer; doc: DesignEnvelope }> {
+  if (Number(request.headers.get('Content-Length') ?? 0) > MAX_DESIGN_BYTES) return jsonError(413, 'Design is too large');
+  const bytes = await request.arrayBuffer();
+  if (bytes.byteLength > MAX_DESIGN_BYTES) return jsonError(413, 'Design is too large');
+
+  let text: string;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes);
+  } catch {
+    return jsonError(400, 'Body is not valid UTF-8');
+  }
+  const result = validate(text, id);
+  return 'problem' in result ? jsonError(400, result.problem) : { bytes, doc: result.doc };
+}
 
 /** One line of the design list. */
 export type DesignSummary = { id: string; name: string; updatedAt: string };
@@ -27,7 +65,7 @@ export function summaryMetadata(doc: { name?: unknown; updatedAt?: unknown }): R
   return metadata;
 }
 
-function decodedName(encoded: string | undefined): string {
+export function decodedName(encoded: string | undefined): string {
   try {
     return encoded ? decodeURIComponent(encoded) : '';
   } catch {

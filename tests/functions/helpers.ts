@@ -46,7 +46,7 @@ export function createFakeBucket() {
     },
     async head(key: string) {
       const stored = objects.get(key);
-      return stored ? { httpEtag: `"${stored.etag}"` } : null;
+      return stored ? { httpEtag: `"${stored.etag}"`, customMetadata: stored.customMetadata } : null;
     },
     async get(key: string, options?: { onlyIf?: Headers }) {
       const stored = objects.get(key);
@@ -64,10 +64,29 @@ export function createFakeBucket() {
   return bucket;
 }
 
+/** A built page, reduced to the parts the `/v/:id` Function touches. */
+export const APP_PAGE = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta name="description" content="Build 3D interior designs and share them as read-only links." />
+    <title>Whimsy Forge</title>
+  </head>
+  <body><div id="root"></div></body>
+</html>
+`;
+
+/** Stands in for the site's static files, which answer `/index.html` with a redirect as Pages does. */
+const fakeAssets = {
+  async fetch(input: URL | string) {
+    return new URL(input).pathname === '/' ? new Response(APP_PAGE, { headers: { 'Content-Type': 'text/html' } }) : new Response(null, { status: 308, headers: { Location: '/' } });
+  },
+} as unknown as Fetcher;
+
 export function createEnv(overrides: Partial<Env> = {}) {
   const bucket = createFakeBucket();
   const env = {
     BUCKET: bucket as unknown as R2Bucket,
+    ASSETS: fakeAssets,
     ACCESS_TEAM_DOMAIN: TEAM_DOMAIN,
     ACCESS_AUD: AUD,
     ...overrides,

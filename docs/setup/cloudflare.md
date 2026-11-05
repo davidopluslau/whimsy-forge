@@ -95,3 +95,23 @@ curl -i -X PUT https://whimsy-forge-cze.pages.dev/api/designs/aaaaaaaaaaaaaaaaaa
 ```
 
 If the editor shows **Not saved: signed out** while you are signed in, check that the two values from step 5 are deployed and that **Cookie Path Attribute** is off.
+
+## 8. Verify sharing (M6)
+
+Sharing needs no dashboard changes: the Access application covers only `/editor`, so `/v/*` is public. Check these on production, because restricted previews put share links behind a login and can't create them.
+
+| Check | How | Expected |
+| --- | --- | --- |
+| Share | Open a design in `/editor`, click **Share** | A dialog shows a `/v/…` link, and it's on the clipboard |
+| Phone, no login | Open the link in a private window on your phone | The design is shown, a finger orbits it, and the camera buttons move the view |
+| Frozen | Change the design, wait for **Saved**, reload the link | The link still shows the old version |
+| Preview | Paste the link into a messaging app, or into a [link-preview debugger](https://developers.facebook.com/tools/debug/) | The design's name and picture appear |
+| Writes protected | The `curl` below | `HTTP/2 401` |
+
+```sh
+curl -i -X PUT https://whimsy-forge-cze.pages.dev/api/snapshots/aaaaaaaaaaaaaaaaaaaaaa \
+  -H 'Content-Type: application/json' \
+  -d '{"schemaVersion":1,"id":"aaaaaaaaaaaaaaaaaaaaaa"}'
+```
+
+To revoke a link, delete `snapshots/<id>.json` and `assets/snapshots/<id>.jpg` from the bucket in the R2 dashboard.
