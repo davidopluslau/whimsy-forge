@@ -93,6 +93,7 @@ a {
 }
 
 .editor button,
+.editor select,
 .editor input[type='text'] {
   font: inherit;
   color: inherit;
@@ -181,6 +182,33 @@ a {
   outline-color: var(--danger);
 }
 
+.field select {
+  padding: 5px 4px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+/* Labels above the boxes, so that all of an opening's values fit across a half-width pane. */
+.plan__fields {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.plan__fields .field {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  font-size: 0.75rem;
+}
+
+.plan__fields .field input[type='text'] {
+  width: 6em;
+  padding: 3px 6px;
+  font-size: 0.875rem;
+}
+
 .button-quiet {
   padding: 5px 10px;
   background: transparent;
@@ -245,6 +273,14 @@ a {
   height: 46px;
   padding: 0 12px;
   white-space: nowrap;
+}
+
+.plan__bar .segmented {
+  flex: none;
+}
+
+.plan__bar .segmented button {
+  padding: 6px 10px;
 }
 
 .plan__bar--bottom {
@@ -315,6 +351,39 @@ a {
   fill: var(--accent);
 }
 
+.plan__opening {
+  fill: var(--bg);
+  stroke: var(--ink);
+  stroke-width: 1;
+  cursor: grab;
+}
+
+.plan__opening--selected {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.plan__opening--preview {
+  fill: var(--accent);
+  stroke: var(--accent);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.plan__opening-mark {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+.plan__opening-handle {
+  fill: var(--accent);
+  stroke: var(--bg);
+  stroke-width: 1.5;
+  cursor: ew-resize;
+}
+
 .plan__corner {
   fill: var(--bg);
   stroke: var(--ink);
@@ -333,6 +402,10 @@ a {
   fill: var(--accent);
   font-weight: 600;
   text-anchor: start;
+}
+
+.plan__dimension--gap {
+  text-anchor: middle;
 }
 
 .plan__preview {

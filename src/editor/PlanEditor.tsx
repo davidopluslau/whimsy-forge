@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import type { Vec2 } from '../model/design';
-import { findRoomLoop, MAX_WALL_LENGTH, MIN_WALL_LENGTH, nearestWall, samePoint, wallEndpoints, wallFootprints, wallLength } from '../model/room';
+import type { Opening, Vec2, Wall } from '../model/design';
+import { createOpening, distanceAlongWall, nearestOpening, openingOutline, wallFaces, wallPoint } from '../model/openings';
+import { findRoomLoop, MAX_WALL_LENGTH, MIN_WALL_LENGTH, nearestWall, samePoint, wallEndpoints, wallFootprints, wallLength, type WallFootprint } from '../model/room';
 import { formatArea, formatLength, parseLength, type LengthUnit } from '../model/units';
 import { useDesignStore } from '../store/designStore';
 import { LengthField } from './LengthField';
+import { MaterialSelect } from './MaterialSelect';
 import { GRID_MAJOR_EVERY, GRID_STEP, mergeWithEndpoint, snapPoint, typedTarget } from './snap';
 
-type Tool = 'draw' | 'select';
+type Tool = 'draw' | 'select' | Opening['kind'];
 type View = { scale: number; panX: number; panY: number };
 type DrawnWall = { wallId: string; from: Vec2 };
+/** Dragging an opening: `grab` keeps the part under the pointer under the pointer. */
+type OpeningDrag = { openingId: string; part: 'body' | 'start' | 'end'; grab: number };
 
 const INITIAL_SCALE = 60;
 const MIN_SCALE = 10;
@@ -17,6 +21,24 @@ const MIN_GRID_LINE_GAP = 6;
 const SNAP_RADIUS_PX = 12;
 const CLICK_SLOP_PX = 4;
 const DIMENSION_GAP_PX = 14;
+const HANDLE_RADIUS_PX = 6;
+/** Gaps narrower than this between an opening and the wall's end get no label. */
+const MIN_LABELED_GAP = 0.005;
+
+/** The door's swing, drawn into the room from the hinge at its near edge, or a window's center line. */
+function openingMark(wall: Wall, footprint: WallFootprint, opening: Opening, scale: number, toScreen: (p: Vec2) => Vec2) {
+  const [near, far] = wallFaces(wall, footprint);
+  const point = (along: number, across: number) => toScreen(wallPoint(wall, footprint, along, across)).join(' ');
+  const end = opening.offset + opening.width;
+  if (opening.kind === 'window') return `M${point(opening.offset, (near + far) / 2)}L${point(end, (near + far) / 2)}`;
+
+  // The arc runs from the open door's tip back to the closed position. Screen axes match plan axes,
+  // so its direction is the sign of the turn from the door (pointing into the room) to the wall.
+  const radius = opening.width * scale;
+  const [dx, dy] = [wall.end[0] - wall.start[0], wall.end[1] - wall.start[1]];
+  const sweep = footprint.away[1] * dx - footprint.away[0] * dy > 0 ? 1 : 0;
+  return `M${point(opening.offset, near)}L${point(opening.offset, near - opening.width)}A${radius} ${radius} 0 0 ${sweep} ${point(end, near)}`;
+}
 
 /** Grid lines as an SVG path, skipping any spacing too tight to read at this zoom. */
 function gridPath(step: number, width: number, height: number, toScreen: (p: Vec2) => Vec2, toWorld: (x: number, y: number) => Vec2, include: (index: number) => boolean) {
@@ -38,6 +60,13 @@ export function PlanEditor({ unit }: { unit: LengthUnit }) {
   const addWall = useDesignStore((state) => state.addWall);
   const removeWall = useDesignStore((state) => state.removeWall);
   const setWallLength = useDesignStore((state) => state.setWallLength);
+  const setWallMaterial = useDesignStore((state) => state.setWallMaterial);
+  const setFloorMaterial = useDesignStore((state) => state.setFloorMaterial);
+  const addOpening = useDesignStore((state) => state.addOpening);
+  const removeOpening = useDesignStore((state) => state.removeOpening);
+  const moveOpening = useDesignStore((state) => state.moveOpening);
+  const dragOpeningEdge = useDesignStore((state) => state.dragOpeningEdge);
+  const updateOpening = useDesignStore((state) => state.updateOpening);
 
   const [tool, setTool] = useState<Tool>('draw');
   const [gridSnap, setGridSnap] = useState(true);
@@ -49,10 +78,11 @@ export function PlanEditor({ unit }: { unit: LengthUnit }) {
   const [typed, setTyped] = useState('');
   const [typedInvalid, setTypedInvalid] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedOpeningId, setSelectedOpeningId] = useState<string | null>(null);
 
   const svgRef = useRef<SVGSVGElement>(null);
   const typedInputRef = useRef<HTMLInputElement>(null);
-  const gesture = useRef<{ x: number; y: number; panX: number; panY: number; moved: boolean; pans: boolean; button: number } | null>(null);
+  const gesture = useRef<{ x: number; y: number; panX: number; panY: number; moved: boolean; pans: boolean; button: number; drag: OpeningDrag | null } | null>(null);
 
   const toScreen = ([x, y]: Vec2): Vec2 => [size.width / 2 + view.panX + x * view.scale, size.height / 2 + view.panY + y * view.scale];
   const toWorld = (x: number, y: number): Vec2 => [(x - size.width / 2 - view.panX) / view.scale, (y - size.height / 2 - view.panY) / view.scale];
@@ -61,6 +91,19 @@ export function PlanEditor({ unit }: { unit: LengthUnit }) {
   const footprints = useMemo(() => wallFootprints(room), [room]);
   const loop = useMemo(() => findRoomLoop(room.walls), [room.walls]);
   const selected = room.walls.find((wall) => wall.id === selectedId) ?? null;
+  const selectedOpening = room.openings.find((opening) => opening.id === selectedOpeningId) ?? null;
+
+  const wallById = (id: string) => room.walls.find((wall) => wall.id === id);
+  const footprintOf = (wallId: string) => footprints.find((footprint) => footprint.wallId === wallId);
+  const snapAlong = (distance: number) => (gridSnap ? Math.round(distance / GRID_STEP[unit]) * GRID_STEP[unit] : distance);
+
+  /** Where a door or window would go for a click at this point, centered there on the nearest wall. */
+  const placementAt = (point: Vec2) => {
+    if (tool !== 'door' && tool !== 'window') return null;
+    const wall = nearestWall(room.walls, point, SNAP_RADIUS_PX / view.scale);
+    return wall ? createOpening(room, wall.id, tool, snapAlong(distanceAlongWall(wall, point))) : null;
+  };
+  const placement = cursor ? placementAt(cursor) : null;
 
   const snapAt = (point: Vec2) => snapPoint(point, { endpoints, tolerance: SNAP_RADIUS_PX / view.scale, gridStep: gridSnap ? GRID_STEP[unit] : null, anchor });
   const snap = tool === 'draw' && cursor ? snapAt(cursor) : null;
@@ -119,7 +162,60 @@ export function PlanEditor({ unit }: { unit: LengthUnit }) {
   function chooseTool(next: Tool) {
     endChain();
     setSelectedId(null);
+    setSelectedOpeningId(null);
     setTool(next);
+  }
+
+  function selectWall(id: string | null) {
+    setSelectedId(id);
+    setSelectedOpeningId(null);
+  }
+
+  function selectOpening(id: string) {
+    setSelectedOpeningId(id);
+    setSelectedId(null);
+  }
+
+  /** The selected opening's resize handle under a point, if any. */
+  function handleAt(point: Vec2): 'start' | 'end' | null {
+    const wall = selectedOpening && wallById(selectedOpening.wallId);
+    const footprint = selectedOpening && footprintOf(selectedOpening.wallId);
+    if (!selectedOpening || !wall || !footprint) return null;
+    const [near, far] = wallFaces(wall, footprint);
+    const radius = (HANDLE_RADIUS_PX + CLICK_SLOP_PX) / view.scale;
+    const within = (along: number) => {
+      const handle = wallPoint(wall, footprint, along, (near + far) / 2);
+      return Math.hypot(handle[0] - point[0], handle[1] - point[1]) <= radius;
+    };
+    if (within(selectedOpening.offset)) return 'start';
+    return within(selectedOpening.offset + selectedOpening.width) ? 'end' : null;
+  }
+
+  /** Starts dragging the opening or handle under a point in the select tool. */
+  function beginOpeningDrag(point: Vec2): OpeningDrag | null {
+    const handle = handleAt(point);
+    const opening = handle ? selectedOpening : nearestOpening(room, point, CLICK_SLOP_PX / view.scale);
+    const wall = opening && wallById(opening.wallId);
+    if (!opening || !wall) return null;
+    selectOpening(opening.id);
+    const along = distanceAlongWall(wall, point);
+    if (handle === 'start') return { openingId: opening.id, part: 'start', grab: along - opening.offset };
+    if (handle === 'end') return { openingId: opening.id, part: 'end', grab: along - opening.offset - opening.width };
+    return { openingId: opening.id, part: 'body', grab: along - opening.offset };
+  }
+
+  function continueOpeningDrag(drag: OpeningDrag, point: Vec2) {
+    const opening = room.openings.find((candidate) => candidate.id === drag.openingId);
+    const wall = opening && wallById(opening.wallId);
+    if (!wall) return;
+    const position = snapAlong(distanceAlongWall(wall, point) - drag.grab);
+    if (drag.part === 'body') moveOpening(drag.openingId, position);
+    else dragOpeningEdge(drag.openingId, drag.part, position);
+  }
+
+  function deleteSelectedOpening() {
+    if (selectedOpeningId) removeOpening(selectedOpeningId);
+    setSelectedOpeningId(null);
   }
 
   function placeCorner(corner: Vec2) {
@@ -162,10 +258,14 @@ export function PlanEditor({ unit }: { unit: LengthUnit }) {
       if (event.target instanceof HTMLInputElement && !inTypedInput) return;
       if (event.key === 'Escape') {
         endChain();
-        setSelectedId(null);
+        selectWall(null);
+        if (tool === 'door' || tool === 'window') setTool('select');
       } else if (event.key === 'Backspace' && tool === 'draw' && anchor && typed === '') {
         event.preventDefault();
         undoLastWall();
+      } else if ((event.key === 'Delete' || event.key === 'Backspace') && tool === 'select' && selectedOpeningId) {
+        event.preventDefault();
+        deleteSelectedOpening();
       } else if ((event.key === 'Delete' || event.key === 'Backspace') && tool === 'select' && selectedId) {
         event.preventDefault();
         removeWall(selectedId);
@@ -184,6 +284,7 @@ export function PlanEditor({ unit }: { unit: LengthUnit }) {
   function handlePointerDown(event: ReactPointerEvent<SVGSVGElement>) {
     const { x, y } = pointerPosition(event);
     event.currentTarget.setPointerCapture(event.pointerId);
+    const drag = tool === 'select' && event.button === 0 ? beginOpeningDrag(toWorld(x, y)) : null;
     gesture.current = {
       x,
       y,
@@ -191,8 +292,9 @@ export function PlanEditor({ unit }: { unit: LengthUnit }) {
       panY: view.panY,
       moved: false,
       button: event.button,
-      // Drawing keeps the left button for corners; panning there takes the middle or right button.
-      pans: event.button !== 0 || tool === 'select',
+      drag,
+      // Placing things keeps the left button; panning there takes the middle or right button.
+      pans: !drag && (event.button !== 0 || tool === 'select'),
     };
   }
 
@@ -205,18 +307,26 @@ export function PlanEditor({ unit }: { unit: LengthUnit }) {
     if (active.pans && active.moved) {
       setView({ ...view, panX: active.panX + x - active.x, panY: active.panY + y - active.y });
     }
+    if (active.drag && active.moved) continueOpeningDrag(active.drag, toWorld(x, y));
   }
 
   function handlePointerUp(event: ReactPointerEvent<SVGSVGElement>) {
     const active = gesture.current;
     gesture.current = null;
-    if (!active || active.moved || active.button !== 0) return;
+    if (!active || active.moved || active.drag || active.button !== 0) return;
     const { x, y } = pointerPosition(event);
     const world = toWorld(x, y);
     if (tool === 'select') {
-      setSelectedId(nearestWall(room.walls, world, SNAP_RADIUS_PX / view.scale)?.id ?? null);
-    } else {
+      selectWall(nearestWall(room.walls, world, SNAP_RADIUS_PX / view.scale)?.id ?? null);
+    } else if (tool === 'draw') {
       placeCorner(typedPoint ?? snapAt(world).point);
+    } else {
+      const spot = placementAt(world);
+      const id = spot && addOpening(spot.wallId, spot.kind, spot.offset + spot.width / 2);
+      if (id) {
+        setTool('select');
+        selectOpening(id);
+      }
     }
   }
 
@@ -242,6 +352,12 @@ export function PlanEditor({ unit }: { unit: LengthUnit }) {
           </button>
           <button type="button" aria-pressed={tool === 'select'} onClick={() => chooseTool('select')}>
             Select
+          </button>
+          <button type="button" aria-label="Add door" aria-pressed={tool === 'door'} onClick={() => chooseTool('door')}>
+            + Door
+          </button>
+          <button type="button" aria-label="Add window" aria-pressed={tool === 'window'} onClick={() => chooseTool('window')}>
+            + Window
           </button>
         </div>
         <label className="field field--inline">
@@ -298,6 +414,63 @@ export function PlanEditor({ unit }: { unit: LengthUnit }) {
           );
         })}
 
+        {room.openings.map((opening) => {
+          const wall = wallById(opening.wallId);
+          const footprint = footprintOf(opening.wallId);
+          if (!wall || !footprint) return null;
+          const isSelected = opening.id === selectedOpeningId;
+          return (
+            <g key={opening.id}>
+              <polygon
+                className={isSelected ? 'plan__opening plan__opening--selected' : 'plan__opening'}
+                data-testid="plan-opening"
+                data-kind={opening.kind}
+                points={points(openingOutline(wall, footprint, opening))}
+              />
+              <path className="plan__opening-mark" d={openingMark(wall, footprint, opening, view.scale, toScreen)} />
+            </g>
+          );
+        })}
+
+        {selectedOpening &&
+          (() => {
+            const wall = wallById(selectedOpening.wallId);
+            const footprint = footprintOf(selectedOpening.wallId);
+            if (!wall || !footprint) return null;
+            const [near, far] = wallFaces(wall, footprint);
+            const end = selectedOpening.offset + selectedOpening.width;
+            const length = wallLength(wall);
+            const labelAcross = near - DIMENSION_GAP_PX / view.scale;
+            const gaps: [number, number][] = [
+              [selectedOpening.offset, selectedOpening.offset / 2],
+              [length - end, (end + length) / 2],
+            ];
+            return (
+              <>
+                {gaps.map(([gap, along], index) => {
+                  if (gap < MIN_LABELED_GAP) return null;
+                  const [x, y] = toScreen(wallPoint(wall, footprint, along, labelAcross));
+                  return (
+                    <text key={index} className="plan__dimension plan__dimension--preview plan__dimension--gap" data-testid="opening-gap" x={x} y={y}>
+                      {formatLength(gap, unit)}
+                    </text>
+                  );
+                })}
+                {[selectedOpening.offset, end].map((along) => {
+                  const [x, y] = toScreen(wallPoint(wall, footprint, along, (near + far) / 2));
+                  return <circle key={along} className="plan__opening-handle" data-testid="opening-handle" cx={x} cy={y} r={HANDLE_RADIUS_PX} />;
+                })}
+              </>
+            );
+          })()}
+
+        {placement &&
+          (() => {
+            const wall = wallById(placement.wallId);
+            const footprint = footprintOf(placement.wallId);
+            return wall && footprint ? <polygon className="plan__opening plan__opening--preview" points={points(openingOutline(wall, footprint, placement))} /> : null;
+          })()}
+
         {endpoints.map((endpoint) => {
           const [x, y] = toScreen(endpoint);
           return <circle key={`${endpoint[0]},${endpoint[1]}`} className="plan__corner" cx={x} cy={y} r={3.5} />;
@@ -351,9 +524,22 @@ export function PlanEditor({ unit }: { unit: LengthUnit }) {
                 : 'Click to place the first corner. Scroll to zoom; drag with the right button to pan.'}
             </p>
           </>
+        ) : tool === 'door' || tool === 'window' ? (
+          <p className="plan__hint">Click a wall to place the {tool}. Esc cancels.</p>
+        ) : selectedOpening ? (
+          <div className="plan__fields" key={selectedOpening.id} data-testid="opening-fields">
+            <LengthField label="Offset" meters={selectedOpening.offset} unit={unit} onCommit={(offset) => updateOpening(selectedOpening.id, { offset })} />
+            <LengthField label="Width" meters={selectedOpening.width} unit={unit} onCommit={(width) => updateOpening(selectedOpening.id, { width })} />
+            <LengthField label="Height" meters={selectedOpening.height} unit={unit} onCommit={(height) => updateOpening(selectedOpening.id, { height })} />
+            {selectedOpening.kind === 'window' && <LengthField label="Sill" meters={selectedOpening.sill} unit={unit} onCommit={(sill) => updateOpening(selectedOpening.id, { sill })} />}
+            <button type="button" className="button-quiet" onClick={deleteSelectedOpening}>
+              Delete {selectedOpening.kind}
+            </button>
+          </div>
         ) : selected ? (
           <>
             <LengthField key={selected.id} label="Wall length" meters={wallLength(selected)} unit={unit} onCommit={(meters) => setWallLength(selected.id, meters)} />
+            <MaterialSelect label="Wall material" surface="wall" value={selected.materialId} onChange={(materialId) => setWallMaterial(selected.id, materialId)} />
             <button
               type="button"
               className="button-quiet"
@@ -366,7 +552,10 @@ export function PlanEditor({ unit }: { unit: LengthUnit }) {
             </button>
           </>
         ) : (
-          <p className="plan__hint">Click a wall to change its length or delete it. Scroll to zoom; drag to pan.</p>
+          <>
+            <MaterialSelect label="Floor material" surface="floor" value={room.floorMaterialId} onChange={setFloorMaterial} />
+            <p className="plan__hint">Click a wall or opening to edit it; drag an opening or its handles to move or resize it. Scroll to zoom; drag to pan.</p>
+          </>
         )}
       </div>
     </div>

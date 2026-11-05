@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { formatLength, parseLength, type LengthUnit } from '../model/units';
 
+const SAME_LENGTH = 1e-6;
+
 type LengthFieldProps = {
   label: string;
   meters: number;
@@ -29,6 +31,12 @@ export function LengthField({ label, meters, unit, onCommit }: LengthFieldProps)
       return;
     }
     const parsed = parseLength(text, unit);
+    // Retyping the current value is not an edit, and must not read as one that was refused.
+    if (parsed !== null && Math.abs(parsed - meters) < SAME_LENGTH) {
+      setText(shown);
+      setInvalid(false);
+      return;
+    }
     setInvalid(parsed === null || !onCommit(parsed));
   }
 
