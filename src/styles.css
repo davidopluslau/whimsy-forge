@@ -373,45 +373,180 @@ a {
   cursor: pointer;
 }
 
-.save-check {
-  margin-left: auto;
-  position: relative;
-  color: var(--muted);
+.button-danger {
+  color: var(--danger);
+  border-color: var(--danger);
 }
 
-.save-check summary {
-  cursor: pointer;
-}
-
-.save-check__body {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 1;
-  width: 18rem;
-  padding: 12px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-}
-
-.save-check__body button {
+.button-primary {
   padding: 6px 12px;
   color: var(--bg);
   background: var(--accent);
-  border: 0;
   border-radius: 6px;
-  cursor: pointer;
+  text-decoration: none;
 }
 
-.save-check__body button:disabled {
-  opacity: 0.6;
-  cursor: progress;
+.editor__back {
+  white-space: nowrap;
 }
 
-.save-check__body p {
+.editor input.editor__name {
+  width: 10em;
+  padding: 3px 6px;
+  font-weight: 600;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  text-overflow: ellipsis;
+}
+
+.editor input.editor__name:hover,
+.editor input.editor__name:focus {
+  border-color: var(--line);
+}
+
+.save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.save-status[data-state='error'],
+.save-status[data-state='conflict'] {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.save-status .button-quiet {
+  padding: 2px 8px;
+  color: var(--ink);
+  font-weight: 400;
+}
+
+.page-message {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  min-height: 100dvh;
+  padding: 16px;
+  margin: 0;
+  text-align: center;
+  color: var(--muted);
+}
+
+.page-message h1 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: var(--ink);
+}
+
+.page-message p {
+  max-width: 34rem;
   margin: 8px 0 0;
+}
+
+.page-message__actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.page-message button,
+.designs button,
+.designs input {
+  font: inherit;
+  color: inherit;
+}
+
+.designs {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 16px;
+  font-size: 0.875rem;
+}
+
+.designs__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.designs__header h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.designs__note {
+  color: var(--muted);
+}
+
+.designs__error {
+  margin: 0 0 16px;
+  color: var(--danger);
+}
+
+.designs__error p {
+  margin: 0 0 8px;
+}
+
+.designs__list {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.designs__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.designs__title {
+  display: flex;
+  flex: 1 1 16rem;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.designs__title a {
   overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.designs__updated {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.designs__actions,
+.designs__rename {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.designs__rename {
+  flex: 1 1 16rem;
+}
+
+.designs__rename input {
+  flex: 1 1 10rem;
+  min-width: 0;
+  padding: 4px 6px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
 }
 
 .plan {

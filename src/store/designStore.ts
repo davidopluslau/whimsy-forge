@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { createEmptyDesign, type Design, type Item, type Opening, type Room, type Vec2 } from '../model/design';
+import { createEmptyDesign, renamedDesign, type Design, type Item, type Opening, type Room, type Vec2 } from '../model/design';
 import * as items from '../model/items';
 import * as openings from '../model/openings';
 import * as room from '../model/room';
@@ -24,6 +24,8 @@ type DesignStore = {
   /** The document when the current gesture began; null outside a gesture. */
   gestureBase: Document | null;
   setDesign: (design: Design) => void;
+  /** Returns whether the name changed. A name isn't part of a design's undo history. */
+  renameDesign: (name: string) => boolean;
   /**
    * Groups the edits made until `endGesture` into one undo step, e.g. a drag. Edits still apply at once,
    * so the view follows the pointer; only the history waits.
@@ -107,6 +109,13 @@ export const useDesignStore = create<DesignStore>((set, get) => {
     future: [],
     gestureBase: null,
     setDesign: (design) => set({ design, past: [], future: [], gestureBase: null }),
+    renameDesign: (name) => {
+      const { design } = get();
+      const renamed = renamedDesign(design, name);
+      if (renamed === design) return false;
+      set({ design: stamp(renamed) });
+      return true;
+    },
     beginGesture: () => {
       if (!get().gestureBase) set({ gestureBase: pick(get().design) });
     },

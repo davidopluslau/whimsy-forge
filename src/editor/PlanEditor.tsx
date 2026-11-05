@@ -8,7 +8,7 @@ import { useDesignStore } from '../store/designStore';
 import { ASSET_DRAG_TYPE, isAssetDrag } from './drag';
 import { LengthField } from './LengthField';
 import { MaterialSelect } from './MaterialSelect';
-import { GRID_MAJOR_EVERY, GRID_STEP, mergeWithEndpoint, snapPoint, typedTarget } from './snap';
+import { frameWalls, GRID_MAJOR_EVERY, GRID_STEP, mergeWithEndpoint, snapPoint, typedTarget } from './snap';
 
 type Tool = 'draw' | 'select' | Opening['kind'];
 type View = { scale: number; panX: number; panY: number };
@@ -83,7 +83,8 @@ export function PlanEditor({ unit, items, overlapping, selectedItemId, onSelectI
   const dragOpeningEdge = useDesignStore((state) => state.dragOpeningEdge);
   const updateOpening = useDesignStore((state) => state.updateOpening);
 
-  const [tool, setTool] = useState<Tool>('draw');
+  // A design that already has walls opens ready to edit them, so a stray click doesn't start a new one.
+  const [tool, setTool] = useState<Tool>(() => (room.walls.length > 0 ? 'select' : 'draw'));
   const [gridSnap, setGridSnap] = useState(true);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [view, setView] = useState<View>({ scale: INITIAL_SCALE, panX: 0, panY: 0 });
@@ -138,6 +139,15 @@ export function PlanEditor({ unit, items, overlapping, selectedItemId, onSelectI
     observer.observe(svg);
     return () => observer.disconnect();
   }, []);
+
+  // Once the canvas has a size, bring a saved room into view: it could be anywhere when it was drawn.
+  const framed = useRef(false);
+  useEffect(() => {
+    if (framed.current || size.width === 0 || size.height === 0) return;
+    framed.current = true;
+    const fitted = frameWalls(room.walls, size, { maxScale: INITIAL_SCALE, minScale: MIN_SCALE });
+    if (fitted) setView(fitted);
+  }, [size, room.walls]);
 
   // A native listener, because React's wheel listeners are passive and could not stop page zoom.
   useEffect(() => {

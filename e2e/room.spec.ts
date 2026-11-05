@@ -3,7 +3,7 @@ import { accessToken } from './access-token';
 
 test.beforeEach(async ({ page, context, baseURL }) => {
   await context.addCookies([{ name: 'CF_Authorization', value: await accessToken(), url: baseURL! }]);
-  await page.goto('/editor');
+  await page.goto('/editor/new');
   await expect(page.getByTestId('plan-canvas')).toBeVisible();
 });
 

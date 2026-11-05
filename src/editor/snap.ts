@@ -1,4 +1,4 @@
-import type { Vec2 } from '../model/design';
+import type { Vec2, Wall } from '../model/design';
 import { distance, VERTEX_TOLERANCE } from '../model/room';
 import type { LengthUnit } from '../model/units';
 
@@ -7,6 +7,23 @@ export const GRID_STEP: Record<LengthUnit, number> = { m: 0.1, ft: 0.1524 };
 
 /** Heavier grid lines fall every this many steps: 1 m, or 1 foot. */
 export const GRID_MAJOR_EVERY: Record<LengthUnit, number> = { m: 10, ft: 2 };
+
+/** Space left around a framed room, in pixels. */
+const FRAME_MARGIN_PX = 60;
+
+/**
+ * The plan's zoom and pan that center these walls in a canvas of this size, zooming out if they
+ * wouldn't fit. Null with no walls, so an empty plan keeps its origin at the center.
+ */
+export function frameWalls(walls: readonly Wall[], size: { width: number; height: number }, limits: { maxScale: number; minScale: number }) {
+  if (walls.length === 0) return null;
+  const xs = walls.flatMap((wall) => [wall.start[0], wall.end[0]]);
+  const ys = walls.flatMap((wall) => [wall.start[1], wall.end[1]]);
+  const [minX, maxX, minY, maxY] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const fit = (pixels: number, meters: number) => (meters > 0 ? Math.max(pixels - 2 * FRAME_MARGIN_PX, 1) / meters : limits.maxScale);
+  const scale = Math.max(limits.minScale, Math.min(limits.maxScale, fit(size.width, maxX - minX), fit(size.height, maxY - minY)));
+  return { scale, panX: (-(minX + maxX) / 2) * scale, panY: (-(minY + maxY) / 2) * scale };
+}
 
 /** A segment within this angle of horizontal or vertical is straightened. */
 const AXIS_LOCK_RADIANS = (4 * Math.PI) / 180;

@@ -6,16 +6,43 @@ export const AUD = 'test-aud';
 
 /** Minimal in-memory stand-in for the parts of R2Bucket the Functions use. */
 export function createFakeBucket() {
-  const objects = new Map<string, { bytes: Uint8Array; contentType?: string; etag: string }>();
+  const objects = new Map<string, { bytes: Uint8Array; contentType?: string; etag: string; customMetadata?: Record<string, string>; uploaded: Date }>();
   let version = 0;
 
   const bucket = {
     objects,
+    /** How many objects one list call returns, so paging can be tested. */
+    pageSize: 1000,
     async put(key: string, value: ArrayBuffer, options?: R2PutOptions) {
+      const onlyIf = options?.onlyIf as R2Conditional | undefined;
+      if (onlyIf?.etagMatches !== undefined && objects.get(key)?.etag !== onlyIf.etagMatches) return null;
       const httpMetadata = options?.httpMetadata as R2HTTPMetadata | undefined;
       const etag = `etag-${++version}`;
-      objects.set(key, { bytes: new Uint8Array(value), contentType: httpMetadata?.contentType, etag });
+      objects.set(key, {
+        bytes: new Uint8Array(value),
+        contentType: httpMetadata?.contentType,
+        etag,
+        customMetadata: options?.customMetadata,
+        uploaded: new Date(Date.UTC(2026, 0, 1, 0, 0, version)),
+      });
       return { httpEtag: `"${etag}"` };
+    },
+    async delete(key: string) {
+      objects.delete(key);
+    },
+    async list(options: { prefix?: string; cursor?: string; include?: string[] } = {}) {
+      const keys = [...objects.keys()].filter((key) => key.startsWith(options.prefix ?? '')).sort();
+      const start = Number(options.cursor ?? 0);
+      const end = start + bucket.pageSize;
+      return {
+        objects: keys.slice(start, end).map((key) => {
+          const { uploaded, customMetadata } = objects.get(key)!;
+          // Real R2 leaves out custom metadata unless asked for it.
+          return { key, uploaded, ...(options.include?.includes('customMetadata') ? { customMetadata } : {}) };
+        }),
+        truncated: end < keys.length,
+        ...(end < keys.length ? { cursor: String(end) } : {}),
+      };
     },
     async head(key: string) {
       const stored = objects.get(key);

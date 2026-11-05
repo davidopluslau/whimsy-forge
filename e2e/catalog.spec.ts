@@ -12,9 +12,9 @@ const models = (catalog as Entry[]).filter((asset) => asset.kind === 'model');
 
 async function openEditor(page: Page, context: BrowserContext, baseURL: string | undefined) {
   await context.addCookies([{ name: 'CF_Authorization', value: await accessToken(), url: baseURL! }]);
-  await page.goto('/editor');
+  await page.goto('/editor/new');
   const panel = page.getByTestId('catalog');
-  await expect(panel).toHaveAttribute('data-status', 'ready');
+  await expect(panel).toHaveAttribute('data-status', 'ready', { timeout: 20_000 });
   return panel;
 }
 
@@ -66,7 +66,7 @@ test('the panel offers a retry when the catalog fails to load', async ({ page, c
   let failing = true;
   await page.route('**/api/catalog', (route) => (failing ? route.fulfill({ status: 500, body: '{}' }) : route.continue()));
   await context.addCookies([{ name: 'CF_Authorization', value: await accessToken(), url: baseURL! }]);
-  await page.goto('/editor');
+  await page.goto('/editor/new');
   const panel = page.getByTestId('catalog');
   await expect(panel).toHaveAttribute('data-status', 'error');
 

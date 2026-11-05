@@ -1,6 +1,6 @@
 # Whimsy Forge — System Design
 
-**Reflects:** `main` through M4 (Placement and editing).
+**Reflects:** `main` through M5 (Persistence).
 
 This document describes the system **as built**. For why the project exists, its requirements and its roadmap, see [PLAN.md](PLAN.md). For one milestone's scope, see [milestones/](milestones/). If this document and the code disagree, the code is right and this document has a bug: fix it.
 
@@ -51,6 +51,7 @@ flowchart LR
         subgraph fn["Pages Functions"]
             editorGuard["editor/_middleware<br/>token check"]
             apiGuard["api/_middleware<br/>token check on writes"]
+            designList["api/designs<br/>token check on reads too"]
             designs["api/designs/:id"]
             assets["api/assets/*"]
             catalog["api/catalog"]
@@ -62,6 +63,7 @@ flowchart LR
     public --> pages
     owner --> apiGuard
     public --> apiGuard
+    apiGuard --> designList --> r2
     apiGuard --> designs --> r2
     apiGuard --> assets --> r2
     apiGuard --> catalog --> r2
@@ -83,7 +85,9 @@ Changing any of these is a major decision, and must be recorded here.
 
 - **The Design JSON is the source of truth.** The 3D scene and the plan view are derived from it. Editor-only state (active tool, selection, pan and zoom, display unit, view mode) stays in React component state and is not part of the document.
 - **Units are meters** in all code and stored data. Only `src/model/units.ts` and the UI deal in feet.
-- **Every edit to the design is one undo step,** and undo and redo restore the design exactly. A pointer gesture (including a gizmo drag) is one step: its edits apply at once and are recorded at the end.
+- **Every edit to the room or items is one undo step,** and undo and redo restore them exactly. A pointer gesture (including a gizmo drag) is one step: its edits apply at once and are recorded at the end. A design's name isn't part of the history.
+- **Saved work is never silently overwritten.** Autosaves are conditional on the stored version they were edited from, and a mismatch stops saving until the owner chooses. Opening a design never writes it, unless it restores unsaved work.
+- **A design from a newer schema is never opened or rewritten** by a build that can't read it. Every load goes through `migrate`, and old documents stay readable through its steps, which are pure and tested against a frozen v1 fixture.
 - **`src/model/` holds pure domain logic.** It imports nothing from Three.js, React or Zustand, so it can be tested in Node.
 - **Editing functions are pure and refuse invalid edits.** A function such as `setWallLength(room, …)` returns a new `Room`, or the *same object* if the edit is not allowed. The store relies on that identity check to detect a refusal.
 - **Design and snapshot IDs are unguessable:** 128 random bits as 22 base64url characters (`src/model/ids.ts`).
@@ -97,10 +101,10 @@ Changing any of these is a major decision, and must be recorded here.
 ```mermaid
 flowchart TD
     app["App.tsx<br/>route by pathname, lazy chunks"]
-    editor["editor/<br/>EditorPage, PlanEditor, CatalogPanel, PhotoForm, fields"]
+    editor["editor/<br/>DesignListPage, EditorRoute, EditorPage, PlanEditor,<br/>SaveIndicator, CatalogPanel, PhotoForm, fields"]
     viewer["viewer/<br/>ChairPage"]
     scene["scene/<br/>RoomScene, ItemMesh, ItemGizmo, roomGeometry,<br/>AssetPreview, ChairScene"]
-    store["store/<br/>designStore (Zustand, undo history)"]
+    store["store/<br/>designStore (Zustand, undo history),<br/>autosave, drafts"]
     api["api/<br/>fetch client"]
     model["model/<br/>Design types, room, openings, items, catalog,<br/>materials, migrate, ids, units"]
     materials["seed/catalog.json<br/>imported at build time, for materials"]
@@ -125,14 +129,15 @@ flowchart TD
 Dependencies point one way, toward `model`.
 
 - **`scene/` does not read the store.** `RoomScene` takes `room` and `items` as props, so the read-only viewer can reuse it without any editing code. The editing props (`editing`, selection, gizmo callbacks) are optional and only the editor passes them.
-- **`App.tsx` routes on `window.location.pathname`,** with no router library: `/editor` and `/editor/*` open the editor, and every other path shows the M0 chair page. Unknown paths reach the app because Pages falls back to `index.html`.
-- **Pages are lazy chunks,** which keeps Three.js out of the entry chunk.
+- **`App.tsx` routes on `window.location.pathname`,** with no router library: `/editor` is the design list, `/editor/new` creates a design and replaces itself in the address bar with `/editor/<id>`, `/editor/<id>` opens one, and every other path shows the M0 chair page. Moving between the list and the editor is a full page load. Unknown paths reach the app because Pages falls back to `index.html`.
+- **Pages are lazy chunks,** which keeps Three.js out of the entry chunk and out of the design list.
+- **`store/` doesn't call the API.** `Autosaver` is given its `put` and draft functions, and `editor/EditorRoute.tsx` wires them to `api/` and to the store.
 
 ## Data model
 
 Types are in `src/model/design.ts`, `src/model/catalog.ts` and `src/model/materials.ts`. `PLAN.md` has the original sketch; the code is authoritative.
 
-- **Design:** `schemaVersion` (currently 1), `id`, `name`, `updatedAt`, `room`, `items`, `cameras`. `cameras` is defined and always empty until M6.
+- **Design:** `schemaVersion` (currently 1, from `CURRENT_SCHEMA_VERSION`), `id`, `name`, `updatedAt`, `room`, `items`, `cameras`. `cameras` is defined and always empty until M6.
 - **Item:** `id`, `assetId`, `position`, `rotationY`, `size`, `mount` (`floor`, `wall` or `ceiling`), optional `wallId` for a wall item. `position` is the bottom center, and `size` is the footprint in meters, copied at placement so geometry never needs the catalog. `materialOverrides` is defined and not used yet. A photo's `assetId` is `photo:<uploadId>`, and its image is an upload rather than a catalog entry.
 - **Room:** `wallHeight`, `walls`, `openings`, optional `floorMaterialId`.
 - **Wall:** `start` and `end` in plan coordinates, `thickness`, optional `materialId`.
@@ -141,7 +146,9 @@ Types are in `src/model/design.ts`, `src/model/catalog.ts` and `src/model/materi
 - **Catalog asset** (`model`, `picture` or `rug`): `id`, `name`, `kind`, `category`, `tags`, `mount`, `url`, `thumbnailUrl`, `dimensions`, `license`, `sourceUrl`. `category` is a closed list in `catalog.ts`, and `mount` is where an item goes when first placed. `dimensions` is always [x, y up, z]: a picture's z is its frame depth and a rug's y its thickness. `license` and `sourceUrl` are separate fields, which departs from PLAN.md's single string.
 - **Material asset:** as PLAN.md describes, also with `sourceUrl`, and with an empty `thumbnailUrl` because nothing displays one.
 
-**Migration.** Every load goes through `parseDesign` → `migrate(doc)`. Today `migrate` accepts only the current version and throws on anything else. M5 adds real steps.
+**Migration.** Every load goes through `parseDesign` → `migrate(doc)` (`src/model/migrate.ts`). It runs the pure steps in `MIGRATIONS`, one per version, then checks the fields the editor reads without a guard. A newer `schemaVersion` throws `NewerSchemaError`, whose message the editor shows instead of opening the design, and anything malformed throws `UnreadableDesignError`. There are no steps yet because the schema is still at 1.
+
+To change the schema, bump `CURRENT_SCHEMA_VERSION` and add one step; `Design['schemaVersion']` follows the constant. Don't edit `src/model/fixtures/design-v1.json`: it stands for documents already in storage, and tests run it through every step. `src/store/schemaBump.test.ts` proves the path with a test-only bump to v2. A migrated document is written back only when next edited, so opening one changes nothing in storage.
 
 **Geometry conventions**
 
@@ -184,20 +191,41 @@ sequenceDiagram
 - **Textures** load through `/api/assets/*` and are cached for the session per material. The surface shows the material's plain color until they arrive, and stays that way if they fail.
 - **Lighting** uses local drei `Lightformer`s rather than a fetched HDRI, so scenes make no third-party requests.
 
+## Saving and loading
+
+```mermaid
+flowchart LR
+    store["designStore<br/>new design object per edit"] -->|"change()"| saver["Autosaver"]
+    saver -->|"within 500 ms"| draft[("localStorage draft<br/>JSON + base ETag")]
+    saver -->|"2 s after the last change<br/>PUT with If-Match"| r2[("R2")]
+    r2 -->|"204 + new ETag: clear draft"| saver
+    r2 -->|"412"| conflict["Conflict: Load latest or Keep mine"]
+    page["pagehide, tab hidden"] -->|"draft now, save now"| saver
+```
+
+- **`Autosaver`** (`src/store/autosave.ts`) keeps one open design saved and reports `saved`, `saving`, `error` or `conflict` to `SaveIndicator`. Saves run one at a time, so each is conditional on the tag the previous one returned. A failure is retried with backoff, from 5 s up to 60 s.
+- **What a closed tab loses.** Saves use `fetch` with `keepalive` (under 60 KiB), so a normal close still reaches the server. A killed tab, a crash or a dead network loses at most the last half second, because the draft in this browser restores it on the next open. Drafts don't follow the owner to another browser.
+- **Opening a design** (`EditorRoute`, `chooseStartingPoint` in `src/store/drafts.ts`) fetches the stored copy, then uses a local draft only if the draft's `updatedAt` is strictly newer. A restored draft keeps the ETag it was edited from and is saved at once, so if the stored copy moved on meanwhile, that save reports a conflict and overwrites nothing. If a save finished but its tab died before clearing the draft, the two have equal `updatedAt` and the draft is dropped.
+- **Conflicts.** A 412 stops saving, and further edits go only to the draft, until the owner picks **Load latest** (drops the draft and reloads) or **Keep mine** (saves with no condition). This covers a second tab, a stale tab left open for days, and a design deleted elsewhere.
+- **The undo history isn't persisted.** A reload starts with an empty history.
+- **The design list** (`DesignListPage`) reads `GET /api/designs`. Rename and duplicate are done in the browser, as a load through `parseDesign`, a change and a save, so both refuse a design from a newer schema. Deleting one is allowed. A copy shares its uploads with the original, which is safe because uploads are never deleted.
+
 ## API
 
 All routes are in `functions/`. Responses are same-origin, so there is no CORS.
 
 | Route | Who | Behavior |
 | --- | --- | --- |
+| `GET /api/designs` | Owner, or a preview's token | Every design as `{ id, name, updatedAt }`, newest first, with `Cache-Control: no-store`. 401 without a valid token. |
 | `GET /api/designs/:id` | Public | The stored bytes with `Cache-Control: no-store` and an `ETag`. 400 for a malformed ID, 404 if absent. |
-| `PUT /api/designs/:id` | Owner, same origin | Stores the received bytes as they are, and returns 204. 400 for bad UTF-8 or JSON, a body `id` that doesn't match the URL, or a missing numeric `schemaVersion`. 413 over 1 MiB. |
+| `PUT /api/designs/:id` | Owner, same origin | Stores the received bytes as they are, and returns 204 with the new `ETag`. With `If-Match`, it stores only if that is still the current tag, and otherwise returns 412, including when the design was deleted. Without it, the write is unconditional. 400 for bad UTF-8 or JSON, a body `id` that doesn't match the URL, or a missing numeric `schemaVersion`. 413 over 1 MiB. |
+| `DELETE /api/designs/:id` | Owner, same origin | Removes the design and returns 204, even if it was already gone. 400 for a malformed ID. |
 | `GET /api/assets/*` | Public | Objects under the `assets/` prefix only, with a one-day browser cache, `ETag` and 304 support. Uploaded photos are served here too. |
 | `PUT /api/uploads/:id` | Owner, same origin | Stores one WebP photo at `assets/uploads/<id>.webp` and returns 201 with its `path`. 400 for a malformed ID, 415 unless the type is `image/webp` and the bytes are a WebP file, 413 over 2 MiB, 409 if the ID is taken. It never replaces an existing upload. |
 | `GET /api/catalog` | Public | The bucket's `catalog.json` with `Cache-Control: no-cache`, `ETag` and 304 support, so a new import shows up at once. 404 before the bucket is seeded. |
 | Any other `/api/*` | Same check as above by method | JSON 404 from `functions/api/[[path]].ts`, so it doesn't fall through to `index.html`. |
 
-The server validates only the envelope, not the document's contents: the owner is the only writer, and the client's `migrate` handles what it loads. Saves are last-write-wins.
+The server validates only the envelope, not the document's contents: the owner is the only writer, and the client's `migrate` handles what it loads. It reads `name` and `updatedAt` from that envelope to store as metadata for the list.
 
 ## Security model
 
@@ -208,7 +236,7 @@ flowchart TD
     req["Request"] --> path{"Path"}
     path -->|"/editor, /editor/*"| edge["Access at the edge<br/>then editor/_middleware<br/>accepts ACCESS_AUD or ACCESS_PREVIEW_AUD"]
     path -->|"/api/*"| method{"Method"}
-    method -->|"GET, HEAD, OPTIONS"| open["Public"]
+    method -->|"GET, HEAD, OPTIONS"| open["Public,<br/>except the list"]
     method -->|"Anything else"| token{"Valid token for<br/>ACCESS_AUD?"}
     token -->|"No"| e401["401"]
     token -->|"Yes"| origin{"Origin absent<br/>or same origin?"}
@@ -220,7 +248,8 @@ flowchart TD
 - **Why `/api` is outside Access:** Access matches paths, not methods, so covering `/api` would put public reads behind a login too. The Function verifies the token on writes instead, using the `CF_Authorization` cookie set when the owner signs in at `/editor`. This depends on Access's **Enforce cookie path attribute** staying off.
 - **The Origin check exists because the token can arrive as a cookie,** which a browser would otherwise attach to a write started by another site.
 - **Reading a design is a capability, not a right.** `GET /api/designs/:id` is public, so whoever knows a live design's ID can read it and its future edits. Never expose that ID in a share link.
-- **Preview deployments can't write.** They share production's bucket. Their Access application's AUD (`ACCESS_PREVIEW_AUD`) opens `/editor` for review but is never accepted for writes. A 401 from **Run save and load check** on a preview is expected. Never add it to `ACCESS_AUD`.
+- **The design list is the one read that needs a token,** because it hands out every live design's ID. The handler (`functions/api/designs/index.ts`) checks it itself, since `api/_middleware.ts` passes every GET.
+- **Preview deployments can't write.** They share production's bucket. Their Access application's AUD (`ACCESS_PREVIEW_AUD`) opens `/editor` and lists designs for review, but is never accepted for writes. On a preview the editor works and shows **Not saved: signed out**, and edits stay in that origin's local draft. Never add it to `ACCESS_AUD`.
 - **`ACCESS_TEST_JWKS`** substitutes a local key set for e2e runs, and is honored only when the request host is `localhost` or `127.0.0.1`.
 - **Configuration:** `wrangler.toml` is the source of truth for bindings and variables, none of which are secret. See [setup/cloudflare.md](setup/cloudflare.md) for the dashboard steps.
 
@@ -228,12 +257,12 @@ flowchart TD
 
 | R2 key | Written by | Read through |
 | --- | --- | --- |
-| `designs/<id>.json` | `PUT /api/designs/:id` | `GET /api/designs/:id` |
+| `designs/<id>.json`, with `name` and `updatedAt` as custom metadata | `PUT /api/designs/:id` | `GET /api/designs/:id`, and `GET /api/designs` through R2 `list` |
 | `assets/<assetId>/<file>` | `scripts/import-asset.ts`, `scripts/seed-r2.mjs` | `GET /api/assets/*` |
 | `assets/uploads/<id>.webp` | `PUT /api/uploads/:id` | `GET /api/assets/uploads/<id>.webp` |
 | `catalog.json` | `scripts/import-asset.ts`, `scripts/seed-r2.mjs` | `GET /api/catalog` |
 
-There is no database. D1 is an option in the plan but isn't used.
+There is no database. D1 is an option in the plan but isn't used: the list is one R2 `list` call with custom metadata, so it reads no documents and has no index to keep in step. The name in the metadata is percent-encoded and cut to 100 code points to stay inside R2's 2 KiB limit. An object saved before M5 has no metadata, so the list shows it as unnamed, with its upload time.
 
 **Uploads** are the photos behind pictures and rugs. The browser shrinks each to 1600 px on its longest side and re-encodes it as WebP before upload, so the 2 MiB cap is a ceiling. Only items refer to an upload, and nothing deletes one yet.
 
@@ -263,7 +292,7 @@ flowchart LR
 
 | Layer | Tool | Runs against |
 | --- | --- | --- |
-| Domain logic, geometry, store | Vitest in Node (`src/**/*.test.ts`) | Pure functions |
+| Domain logic, geometry, store, autosave | Vitest in Node (`src/**/*.test.ts`) | Pure functions, and `Autosaver` with fake timers and a hand-answered server |
 | Import pipeline, seed catalog | Vitest in Node (`tests/scripts/`) | The pipeline with a stub thumbnail renderer, and the checked-in GLBs: sizes, pivots, seat heights, budgets |
 | Functions | Vitest (`tests/functions/`) | Handlers called directly |
 | End to end | Playwright (`e2e/`) | A fresh build on the real Pages runtime (workerd) with local R2. Every seed model is loaded in the browser and measured, and one test runs the real import command |
@@ -279,9 +308,8 @@ flowchart LR
 
 | Limitation | Why it's acceptable for now | Addressed by |
 | --- | --- | --- |
-| The editor keeps its design in memory, so a reload loses it | Persistence is a later milestone | M5 |
-| `SaveCheck` writes a new design to R2 on each run and never deletes it | Small test documents; temporary tool | M5 should remove it |
-| Saves are last-write-wins, so two open tabs can overwrite each other | One editor | Consider in M5; `ETag` is already returned |
+| Designs written by the old save check remain in the production bucket, shown as unnamed | Small; delete them from the list | Owner, once |
+| A draft of a design deleted from another browser stays in this browser's storage, and can recreate the design if this browser opens its address | One owner, usually one browser | Not planned |
 | `/` shows the M0 chair page, and `/v/*` does too | No viewer yet | M6 |
 | Replacing an asset at the same key can be stale in browsers for up to a day | Assets rarely change | Use a new asset ID instead of `--replace` |
 | An import from a stale checkout overwrites the bucket's `catalog.json` with that checkout's list | One owner, one machine; `seed/` is committed after each import | Not planned |
@@ -289,7 +317,7 @@ flowchart LR
 | At 1280 px wide with the catalog open, the plan's status line truncates (full text in its tooltip) | The header's Catalog button gives the width back | Revisit with the editor's panels |
 | A photo is placed once from its upload; there is no library, so placing it again needs a new upload | Keeps M4 to the placement workflow | Not planned yet |
 | Uploads are never deleted, even when no item uses them any more | Storage is small, and deletion needs a reference check | Not planned yet |
-| Item edits are not saved; the room, items and undo history live in memory | Persistence is a later milestone | M5 |
+| The undo history is lost on reload | The design itself is safe; history is only for the session | Not planned |
 
 ## Planned architecture
 
@@ -297,7 +325,6 @@ flowchart LR
 
 | Milestone | Adds | Notes for the implementer |
 | --- | --- | --- |
-| M5 Persistence | Autosave, design list, real migrations | See question 2. `Design['schemaVersion']` is a literal type and `migrate` rejects everything else, so both change at the first bump. |
 | M6 Sharing | Snapshots, `/v/<id>` viewer, image export, Open Graph tags | See questions 3 and 4. `RoomScene` can be reused because it takes props. Image export needs a look at `frameloop="demand"` and `preserveDrawingBuffer`. |
 | M7 Polish | HDRI, soft shadows, lamps, phone budget | An HDRI should be self-hosted in R2 to keep scenes free of third-party requests. Budget: textures up to 2048 px, roughly 30 MB per design. |
 
@@ -305,6 +332,5 @@ flowchart LR
 
 Gaps between [PLAN.md](PLAN.md) and the architecture as built. Remove each one when it is decided, and record the outcome above.
 
-2. **How is the design list protected? (M5)** `api/_middleware.ts` makes every `GET` public. A `GET /api/designs` list would hand out every live design's ID, which is a read capability, so it needs its own owner check, which the middleware doesn't currently offer per route. Listing could use R2 `list`, or the plan's optional D1 index.
 3. **What is a snapshot's storage key? (M6)** The plan's `designs/<id>/snapshots/<timestamp>.json` can't be resolved from `/v/<snapshotId>` alone, and timestamps are guessable. Embedding the design ID in the link would expose the live design. A flat key such as `snapshots/<snapshotId>.json` avoids both, but it departs from the plan's layout.
 4. **How do Open Graph tags get served? (M6)** The app is static, and link-preview crawlers don't run JavaScript. `/v/:id` would need a Function that writes per-snapshot tags into `index.html`, and a preview image captured at share time, since the server can't render one.

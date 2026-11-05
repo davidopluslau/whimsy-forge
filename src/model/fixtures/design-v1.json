@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "v1FixtureDesign_00000a",
+  "name": "Schema 1 fixture",
+  "updatedAt": "2026-11-05T12:00:00.000Z",
+  "room": {
+    "wallHeight": 2.5,
+    "walls": [
+      { "id": "wall-north", "start": [-2, -2.5], "end": [2, -2.5], "thickness": 0.1, "materialId": "white-plaster-02" },
+      { "id": "wall-east", "start": [2, -2.5], "end": [2, 2.5], "thickness": 0.1 },
+      { "id": "wall-south", "start": [2, 2.5], "end": [-2, 2.5], "thickness": 0.1 },
+      { "id": "wall-west", "start": [-2, 2.5], "end": [-2, -2.5], "thickness": 0.1 }
+    ],
+    "openings": [
+      { "id": "door-1", "wallId": "wall-north", "kind": "door", "offset": 0.5, "width": 0.9, "height": 2.1, "sill": 0 },
+      { "id": "window-1", "wallId": "wall-east", "kind": "window", "offset": 1.5, "width": 1.2, "height": 1.2, "sill": 0.9 }
+    ],
+    "floorMaterialId": "laminate-floor-02"
+  },
+  "items": [
+    { "id": "item-sofa", "assetId": "sofa-02", "position": [0, 0, 1], "rotationY": 0, "size": [2, 0.8, 0.9], "mount": "floor" },
+    { "id": "item-rug", "assetId": "photo:AbCdEfGhIjKlMnOpQrSt_-", "position": [0, 0, -0.5], "rotationY": 1.5707963267948966, "size": [1.2, 0.01, 1.8], "mount": "floor" },
+    { "id": "item-picture", "assetId": "photo:AbCdEfGhIjKlMnOpQrSt_0", "position": [-1.985, 1.2, 0], "rotationY": 1.5707963267948966, "size": [0.6, 0.4, 0.03], "mount": "wall", "wallId": "wall-west" }
+  ],
+  "cameras": []
+}
