@@ -7,22 +7,50 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read # paths-filter lists a PR's changed files through the API
 
 jobs:
+  # `check` is a required status, so it must always run and report. When a
+  # change touches only documentation, it skips the slow steps and passes.
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          # A file counts as code unless it matches one of the doc-only
+          # exclusions. Keep this list narrow: anything that build, tests or
+          # e2e read (seed/, tests/, e2e/, config, workflows) must stay code.
+          predicate-quantifier: every
+          filters: |
+            code:
+              - '**'
+              - '!*.md'
+              - '!docs/**'
+              - '!LICENSE'
+              - '!.github/pull_request_template.md'
+              - '!.github/ISSUE_TEMPLATE/**'
+      - name: Report docs-only change
+        if: steps.changes.outputs.code != 'true'
+        run: echo "Only documentation changed; skipping build, unit tests and e2e."
+      - if: steps.changes.outputs.code == 'true'
+        uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: npm ci
-      - run: npm run build
-      - run: npm test
-      - run: npx playwright install --with-deps chromium
-      - run: sudo apt-get install -y libgl1-mesa-dri libegl1 libegl-mesa0
-      - run: npm run test:e2e
+      - if: steps.changes.outputs.code == 'true'
+        run: npm ci
+      - if: steps.changes.outputs.code == 'true'
+        run: npm run build
+      - if: steps.changes.outputs.code == 'true'
+        run: npm test
+      - if: steps.changes.outputs.code == 'true'
+        run: npx playwright install --with-deps chromium
+      - if: steps.changes.outputs.code == 'true'
+        run: sudo apt-get install -y libgl1-mesa-dri libegl1 libegl-mesa0
+      - if: steps.changes.outputs.code == 'true'
+        run: npm run test:e2e
         env:
           E2E_ANGLE: gl-egl
