@@ -3,7 +3,7 @@
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { CATEGORIES, type Category, type Mount, MOUNTS } from '../src/model/catalog.ts';
-import type { ModelOptions } from './import/model.ts';
+import { DEFAULT_MAX_STRETCH, describeStretch, type FitTarget } from './import/model.ts';
 import { importAsset, MODEL_EXTENSIONS } from './import/pipeline.ts';
 import { upload } from './import/r2.ts';
 import { createThumbnailRenderer } from './import/thumbnail.ts';
@@ -27,7 +27,12 @@ Options:
 Models are assumed to be in meters, as glTF specifies. To correct one, pass either:
   --scale <factor>    for example 0.01 for centimeters
   --width | --height | --depth <meters>
-                      the real size along that axis; the model scales uniformly to fit
+                      the real size along that axis, after --rotate-y. With one, the model
+                      scales uniformly. With two or three, such as a listing's W x H x D,
+                      each is fitted exactly; the import reports how far that stretched
+                      the model's proportions
+  --max-stretch <%>   the most a fit to two or three sizes may stretch the proportions
+                      (default: ${DEFAULT_MAX_STRETCH * 100})
   --rotate-y <deg>    turn the model so that its front faces +z
   --max-triangles <n> simplify above this count (default: 60000)
   --max-texture <px>  longest texture side (default: 1024)
@@ -64,6 +69,7 @@ const options = {
   width: { type: 'string' },
   height: { type: 'string' },
   depth: { type: 'string' },
+  'max-stretch': { type: 'string' },
   'max-triangles': { type: 'string' },
   'max-texture': { type: 'string' },
   'seed-dir': { type: 'string' },
@@ -96,18 +102,25 @@ const height = positiveNumber(values.height, 'height');
 const depth = positiveNumber(values.depth, 'depth');
 const isModel = MODEL_EXTENSIONS.some((extension) => file.toLowerCase().endsWith(extension));
 if (values['rotate-y'] !== undefined && !Number.isFinite(Number(values['rotate-y']))) fail('--rotate-y must be a number of degrees.');
-if ([width, height, depth].filter((size) => size !== undefined).length > 1) fail('Pass only one of --width, --height and --depth.');
+if (!isModel && (height !== undefined || depth !== undefined)) fail('An image takes only --width: its height comes from its aspect ratio.');
 
-let fit: ModelOptions['fit'];
-if (width) fit = { axis: 'width', meters: width };
-if (height) fit = { axis: 'height', meters: height };
-if (depth) fit = { axis: 'depth', meters: depth };
+let maxStretch: number | undefined;
+if (values['max-stretch'] !== undefined) {
+  const percent = Number(values['max-stretch']);
+  if (!Number.isFinite(percent) || percent < 0) fail('--max-stretch must be a percentage of zero or more, such as 20.');
+  maxStretch = percent / 100;
+}
+
+const fit: FitTarget | undefined =
+  width === undefined && height === undefined && depth === undefined
+    ? undefined
+    : { ...(width !== undefined && { width }), ...(height !== undefined && { height }), ...(depth !== undefined && { depth }) };
 
 const seedDir = values['seed-dir'] ?? fileURLToPath(new URL('../seed', import.meta.url));
 const thumbnails = isModel ? await createThumbnailRenderer() : null;
 
 try {
-  const { asset, files } = await importAsset(
+  const { asset, files, fit: fitted } = await importAsset(
     {
       file,
       id: values.id,
@@ -120,7 +133,8 @@ try {
       replace: values.replace,
       imageWidth: width,
       model: {
-        fit,
+        fit: isModel ? fit : undefined,
+        maxStretch,
         scale: positiveNumber(values.scale, 'scale'),
         rotateY: values['rotate-y'] === undefined ? undefined : Number(values['rotate-y']),
         maxTriangles: positiveNumber(values['max-triangles'], 'max-triangles'),
@@ -133,6 +147,13 @@ try {
 
   const [x, y, z] = asset.dimensions;
   console.log(`Imported "${asset.name}" as ${asset.id}: ${x} x ${y} x ${z} m (width, height, depth).`);
+  if (fitted && fitted.distortion > 0) {
+    console.log(`Stretched ${(fitted.distortion * 100).toFixed(1)} % to fit: ${describeStretch(fitted.stretch)} against the model's own proportions.`);
+  }
+  if (fitted) {
+    const worst = Math.max(...fitted.error.map((error) => Math.abs(error ?? 0)));
+    console.log(`Largest difference from the size asked for: ${(worst * 100).toFixed(1)} cm.`);
+  }
 
   if (values['no-upload']) {
     console.log('Skipped the upload. Run "npm run seed:remote" to upload everything in seed/.');

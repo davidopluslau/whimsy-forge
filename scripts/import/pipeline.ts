@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join } from 'node:path';
 import sharp from 'sharp';
 import { type CatalogAsset, type Category, isCatalogAsset, isHttpUrl, type LampLight, type Mount } from '../../src/model/catalog.ts';
-import { type ModelOptions, processModel } from './model.ts';
+import { type FitReport, type ModelOptions, processModel } from './model.ts';
 import { THUMBNAIL_SIZE, type ThumbnailRenderer } from './thumbnail.ts';
 
 export const MODEL_EXTENSIONS = ['.glb', '.gltf'];
@@ -36,6 +36,8 @@ export type ImportResult = {
   asset: CatalogAsset;
   /** Absolute paths mapped to their R2 keys, in upload order. */
   files: { path: string; key: string }[];
+  /** For a model fitted to a real size: how it was scaled and how far that changed its proportions. */
+  fit?: FitReport;
 };
 
 export function slugify(text: string): string {
@@ -108,6 +110,7 @@ export async function importAsset(request: ImportRequest, seedDir: string, thumb
   let main: Uint8Array;
   let thumbnail: Uint8Array;
   let dimensions: [number, number, number];
+  let fit: FitReport | undefined;
 
   if (isModel) {
     if (!thumbnails) throw new Error('Importing a model needs a thumbnail renderer.');
@@ -116,6 +119,7 @@ export async function importAsset(request: ImportRequest, seedDir: string, thumb
     mainFile = 'model.glb';
     main = model.glb;
     dimensions = model.dimensions;
+    fit = model.fit;
     thumbnail = await thumbnails.render(model.glb);
   } else {
     kind = request.category === 'rug' ? 'rug' : 'picture';
@@ -155,5 +159,5 @@ export async function importAsset(request: ImportRequest, seedDir: string, thumb
   // Last, so a failed upload never leaves the live catalog pointing at missing objects.
   files.push({ path: catalogPath, key: 'catalog.json' });
 
-  return { asset, files };
+  return { asset, files, ...(fit ? { fit } : {}) };
 }

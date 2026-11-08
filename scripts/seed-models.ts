@@ -112,7 +112,7 @@ try {
         sourceUrl: `https://polyhaven.com/a/${model.source}`,
         replace: true,
         light: model.light,
-        model: { rotateY: model.rotateY, fit: model.height ? { axis: 'height', meters: model.height } : undefined },
+        model: { rotateY: model.rotateY, fit: model.height ? { height: model.height } : undefined },
       },
       seedDir,
       thumbnails,

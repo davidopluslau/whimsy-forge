@@ -28,7 +28,7 @@ Buying through the app, a catalog for other people, and matching a product autom
 ## What the current system means for this
 
 - **Most of the back half exists.** `scripts/import-asset.ts` already takes a GLB, simplifies and compresses it, sets the pivot, renders a thumbnail and uploads it.
-- **Fitting is uniform and single-axis.** The import accepts only one of `--width`, `--height` and `--depth`. A listing's W × H × D needs a new option, and a choice about how far a generated model may be stretched.
+- **Fitting takes W × H × D** since slice 1. Given two or three of `--width`, `--height` and `--depth`, the import fits each one exactly within a stretch limit (`--max-stretch`, 15 % by default) and reports the distortion. Spike 0 should check the default against real generated models.
 - **`sourceUrl` must be an http(s) URL.** `parseCatalog` hides any entry without one. A shop asset has its product URL, so this doesn't affect shopping capture, but a scan of the owner's own chair can't appear today. For real-life capture, the [provenance rule](../SYSTEM_DESIGN.md#core-invariants) has to change without weakening it for third-party assets.
 - **Everything imported is public.** `seed/` is committed to a public repository, and `GET /api/catalog` and `GET /api/assets/*` are public. A model made from a shop's images or from photos of the owner's home would be world-readable, and the source photos must never go there.
 - **Heavy work can't run in Functions.** Generation runs in `scripts/` or on an outside service. A web upload would also need a new owner-only route.
@@ -83,7 +83,7 @@ Each becomes one issue when it's ready to start.
 | # | Slice | Needs | Route | Parent |
 | --- | --- | --- | --- | --- |
 | 0 | Compare two or three generators on both sets, recommend one with costs, and compare ways to estimate dimensions on the home set | Both evaluation sets | Spike | #16 |
-| 1 | Import takes W × H × D, with a limit on stretching, and reports the distortion | — | Small | #16 |
+| 1 | ✅ Import takes W × H × D, with a limit on stretching, and reports the distortion | — | Small | #16 |
 | 2 | The R2-only personal catalog, and a share link never exposes a private asset | — | Feature slice | #16 |
 | 3 | `capture` command for shop input: saved product images, listed dimensions and the product URL in, review, then import as a private asset, with the link shown in the editor. The generator sits behind an interface, stubbed in tests | 0, 1, 2 | Feature slice | #16 |
 | 4 | Real-life input to the same command: own photos, provenance without a URL, and dimensions estimated from the photos as a default the owner confirms | 3 | Feature slice | #15 |
@@ -92,4 +92,6 @@ Each becomes one issue when it's ready to start.
 
 ## Findings and decisions
 
-None yet. Candidates worth including in spike 0, not yet evaluated: hosted APIs such as Meshy and Tripo, open models such as TRELLIS and Hunyuan3D, and scanning apps such as Polycam and RealityScan.
+- **Slice 1, stretching.** The limit compares the largest axis scale with the smallest, so 15 % allows, for example, a model 7 % too wide and 7 % too shallow for its listing. An axis left out of the fit takes the geometric mean of the given axes' scales. The 15 % default is a guess until spike 0 measures how far generated models' proportions are off; `planFit` in `scripts/import/model.ts` is where it changes.
+
+Candidates worth including in spike 0, not yet evaluated: hosted APIs such as Meshy and Tripo, open models such as TRELLIS and Hunyuan3D, and scanning apps such as Polycam and RealityScan.
