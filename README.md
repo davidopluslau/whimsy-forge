@@ -40,7 +40,7 @@ npm run import-asset -- ~/Downloads/oak_table.glb --name "Oak table" --category 
 
 It normalizes the model to meters with its pivot at bottom center, compresses it (meshopt geometry, WebP textures), renders a thumbnail, writes it to `seed/`, uploads it to R2 and adds it to `seed/catalog.json`. Then commit `seed/`, so the next import starts from this catalog.
 
-A model is assumed to be in meters, as glTF specifies. If it isn't, correct it with `--scale 0.01` or give its real size, such as `--height 0.75`. Models should face +z; `--rotate-y <degrees>` turns one that doesn't. Add `--local` to upload to the local R2 instead, and `--help` for every option.
+A model is assumed to be in meters, as glTF specifies. If it isn't, correct it with `--scale 0.01` or give its real size, such as `--height 0.75`. Give two or all three of `--width`, `--height` and `--depth`, such as a shop's listed W × H × D, to fit each one exactly; the import prints how far that stretched the model, and refuses more than 15 % unless you pass `--max-stretch <percent>`. Models should face +z; `--rotate-y <degrees>` turns one that doesn't. Add `--local` to upload to the local R2 instead, and `--help` for every option.
 
 ## Assets
 

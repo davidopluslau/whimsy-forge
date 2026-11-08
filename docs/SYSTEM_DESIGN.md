@@ -101,7 +101,7 @@ Changing any of these is a major decision, and must be recorded here.
 - **No secrets in the bundle.** The JavaScript is public, including the editor's chunk; only the `/editor` page route and API writes are guarded.
 - **Fail closed.** Missing or malformed Access configuration denies the request.
 - **Every third-party asset records its license and source URL** in the catalog. The import refuses an asset without them, and `parseCatalog` leaves such an entry out of the panel.
-- **A model file is in meters, with its pivot at bottom center and its front facing +z,** and its catalog `dimensions` are measured from the finished file. `scripts/import/model.ts` guarantees the size and pivot; `--rotate-y` sets the facing by hand.
+- **A model file is in meters, with its pivot at bottom center and its front facing +z,** and its catalog `dimensions` are measured from the finished file. `scripts/import/model.ts` guarantees the size and pivot; `--rotate-y` sets the facing by hand. A fit to more than one real size may change a model's proportions only within a stretch limit, 15 % by default.
 
 ## Front-end modules
 
@@ -342,7 +342,7 @@ There is no database, and D1 isn't needed: the list is one R2 `list` call with c
 
 ```mermaid
 flowchart LR
-    src["GLB, glTF or image"] --> norm["Normalize<br/>rotate, scale to meters"]
+    src["GLB, glTF or image"] --> norm["Normalize<br/>rotate, scale or fit to meters"]
     norm --> comp["Compress<br/>simplify, meshopt, WebP"]
     comp --> pivot["Pivot to bottom center,<br/>measure the result"]
     pivot --> thumb["Thumbnail<br/>three.js in headless Chromium"]
@@ -350,6 +350,7 @@ flowchart LR
     seed --> r2[("R2, catalog.json last")]
 ```
 
+- **Fitting to a real size** happens after the turn, so width, height and depth are the room's x, y and z. One of `--width`, `--height` and `--depth` scales uniformly. Two or three, such as a listing's W × H × D, fit each given axis exactly, and an axis left out takes the geometric mean of the others' scales. First every node's transform is baked into its mesh, because a per-axis scale above a turned node would shear, which a glTF node can't hold. `planFit` refuses a fit whose largest axis scale exceeds the smallest by more than `--max-stretch`, since a model that far off is wrong and should be retried. The import returns and prints a `FitReport`: each axis's stretch against a uniform scale, the overall distortion, and how far the finished model ends up from each size asked for.
 - **meshopt and WebP, not Draco and KTX2:** three.js decodes both with no extra fetch, while drei's Draco default loads its decoder from a third-party CDN.
 - **`seed/catalog.json` is the catalog's source of truth,** and the bucket's `catalog.json` is a copy of it. An import reads the local file, so it must run from an up-to-date checkout, and `seed/` must be committed afterward.
 - **`scripts/seed-models.ts`** rebuilds the seed furniture from Poly Haven through the same pipeline, checking each file's md5 and each model's height against the published size. It doesn't upload.
@@ -421,7 +422,7 @@ Sources: [Pages limits](https://developers.cloudflare.com/pages/platform/limits/
 
 **Not built.** These notes record what the current architecture implies for coming features, which are tracked in [GitHub Issues](https://github.com/davidopluslau/whimsy-forge/issues) and [feature briefs](features/). They aren't decisions: the agent building the feature decides, then moves the result into the as-built sections above.
 
-- **Asset capture** ([brief](features/asset-capture.md), a draft): turns product pictures and photos into catalog assets. It would end in the existing import pipeline, with generation outside Functions. It collides with three things above: provenance requires an http(s) `sourceUrl`, fitting is uniform along one axis, and everything imported is publicly readable. The owner has decided that personal assets go in an R2-only catalog, out of git, under unguessable IDs, and that models made from a shop's images stay out of share links at first. The details aren't designed yet.
+- **Asset capture** ([brief](features/asset-capture.md), a draft): turns product pictures and photos into catalog assets. It would end in the existing import pipeline, with generation outside Functions. It collides with two things above: provenance requires an http(s) `sourceUrl`, and everything imported is publicly readable. (Fitting to a listing's W × H × D is built: see the import pipeline.) The owner has decided that personal assets go in an R2-only catalog, out of git, under unguessable IDs, and that models made from a shop's images stay out of share links at first. The details aren't designed yet.
 
 ## Open design questions
 

@@ -5,7 +5,7 @@ import { Document, NodeIO } from '@gltf-transform/core';
 import sharp from 'sharp';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { isCatalogAsset } from '../../src/model/catalog';
-import { createIO, measure, processModel } from '../../scripts/import/model';
+import { createIO, describeStretch, measure, planFit, processModel } from '../../scripts/import/model';
 import { formatCatalog, importAsset, slugify, upsertCatalog } from '../../scripts/import/pipeline';
 
 /** A box from `min` to `max`, in whatever units the test pretends the source uses. */
@@ -53,15 +53,76 @@ describe('processModel', () => {
   });
 
   it('fits a typed real-world size uniformly', async () => {
-    const { dimensions } = await processModel(boxDocument([0, 0, 0], [5, 10, 4]), { fit: { axis: 'height', meters: 0.9 } });
+    const { dimensions } = await processModel(boxDocument([0, 0, 0], [5, 10, 4]), { fit: { height: 0.9 } });
     expect(dimensions).toEqual([0.45, 0.9, 0.36]);
   });
 
   it('turns before fitting, so the axes mean what they say afterwards', async () => {
-    const { dimensions } = await processModel(boxDocument([0, 0, 0], [2, 1, 0.5]), { rotateY: 90, fit: { axis: 'width', meters: 1 } });
+    const { dimensions } = await processModel(boxDocument([0, 0, 0], [2, 1, 0.5]), { rotateY: 90, fit: { width: 1 } });
     expect(dimensions[0]).toBeCloseTo(1, 2);
     expect(dimensions[2]).toBeCloseTo(4, 2);
     expect(dimensions[1]).toBeCloseTo(2, 2);
+  });
+
+  describe('fitting width, height and depth', () => {
+    it('fits each axis exactly and reports the stretch', async () => {
+      const { glb, dimensions, fit } = await processModel(boxDocument([0, 0, 0], [1, 0.5, 0.8]), { fit: { width: 1.05, height: 0.5, depth: 0.76 } });
+      expect(dimensions).toEqual([1.05, 0.5, 0.76]);
+      expect((await roundTrip(glb)).dimensions).toEqual([1.05, 0.5, 0.76]);
+      expect(fit!.scales.map((scale) => +scale.toFixed(4))).toEqual([1.05, 1, 0.95]);
+      expect(fit!.distortion).toBeCloseTo(1.05 / 0.95 - 1, 6);
+      expect(fit!.stretch[0]).toBeGreaterThan(0);
+      expect(fit!.stretch[2]).toBeLessThan(0);
+      expect(fit!.error).toEqual([0, 0, 0]);
+    });
+
+    it('reports no distortion when the listing matches the model', async () => {
+      const { dimensions, fit } = await processModel(boxDocument([0, 0, 0], [5, 10, 4]), { fit: { width: 0.45, height: 0.9, depth: 0.36 } });
+      expect(dimensions).toEqual([0.45, 0.9, 0.36]);
+      expect(fit!.distortion).toBeCloseTo(0, 9);
+    });
+
+    it('fits the axes after the turn', async () => {
+      const { dimensions } = await processModel(boxDocument([0, 0, 0], [2, 1, 0.5]), { rotateY: 90, fit: { width: 0.55, height: 1.05, depth: 2.1 } });
+      expect(dimensions).toEqual([0.55, 1.05, 2.1]);
+    });
+
+    it('stretches along the room axes, not a turned part of the model', async () => {
+      // Turned 30 degrees, the box's own axes no longer line up with width and depth, so a scale
+      // applied above the turn without baking it would shear.
+      const document = boxDocument([0, 0, 0], [1, 1, 0.5]);
+      const half = Math.PI / 12;
+      document.getRoot().listNodes().find((node) => node.getName() === 'child')!.setRotation([0, Math.sin(half), 0, Math.cos(half)]);
+      const { glb, dimensions } = await processModel(document, { fit: { width: 1.2, height: 1, depth: 0.95 } });
+      expect(dimensions).toEqual([1.2, 1, 0.95]);
+      expect((await roundTrip(glb)).dimensions).toEqual([1.2, 1, 0.95]);
+    });
+
+    it('bakes a mesh shared by two nodes once for each', async () => {
+      const document = boxDocument([0, 0, 0], [0.5, 1, 0.5]);
+      const child = document.getRoot().listNodes().find((node) => node.getName() === 'child')!;
+      child.getParentNode()!.addChild(document.createNode('twin').setMesh(child.getMesh()).setTranslation([2, 0, 0]));
+      // Two boxes from x = 1 to 2.5: 1.5 wide, 1 high and 0.5 deep.
+      const { dimensions } = await processModel(document, { fit: { width: 1.56, height: 1, depth: 0.5 } });
+      expect(dimensions).toEqual([1.56, 1, 0.5]);
+    });
+
+    it('takes the average scale for an axis left out', async () => {
+      const { dimensions, fit } = await processModel(boxDocument([0, 0, 0], [1, 1, 1]), { fit: { width: 1.06, depth: 0.94 } });
+      expect(dimensions[0]).toBe(1.06);
+      expect(dimensions[2]).toBe(0.94);
+      expect(dimensions[1]).toBeCloseTo(Math.sqrt(1.06 * 0.94), 3);
+      expect(fit!.error[1]).toBeNull();
+    });
+
+    it('refuses to stretch past the limit, unless the limit is raised', async () => {
+      const sofa = () => boxDocument([0, 0, 0], [2, 0.8, 1]);
+      const listing = { width: 2, height: 0.8, depth: 0.8 };
+      await expect(processModel(sofa(), { fit: listing })).rejects.toThrow(/25\.0 %.*more than the 15 % limit/);
+      const { dimensions, fit } = await processModel(sofa(), { fit: listing, maxStretch: 0.3 });
+      expect(dimensions).toEqual([2, 0.8, 0.8]);
+      expect(fit!.distortion).toBeCloseTo(0.25, 6);
+    });
   });
 
   it('refuses a size that is probably in the wrong units, and accepts it once told', async () => {
@@ -141,6 +202,14 @@ describe('importAsset', () => {
     expect(files.map((file) => file.key)).toEqual([asset.url, asset.thumbnailUrl, 'catalog.json']);
   });
 
+  it('fits a listing W x H x D and returns how far it stretched the model', async () => {
+    const { asset, fit } = await importAsset({ ...request, file: table, model: { fit: { width: 1.25, height: 0.74, depth: 0.8 } } }, seedDir, thumbnails);
+    expect(asset.dimensions).toEqual([1.25, 0.74, 0.8]);
+    expect(fit!.distortion).toBeGreaterThan(0.04);
+    expect(fit!.distortion).toBeLessThan(0.06);
+    expect(fit!.error).toEqual([0, 0, 0]);
+  });
+
   it('refuses an import without a license or a source URL', async () => {
     await expect(importAsset({ ...request, file: table, license: ' ' }, seedDir, thumbnails)).rejects.toThrow(/license/);
     await expect(importAsset({ ...request, file: table, sourceUrl: 'somewhere' }, seedDir, thumbnails)).rejects.toThrow(/URL/);
@@ -199,6 +268,39 @@ describe('importAsset', () => {
     it('requires a width', async () => {
       await expect(importAsset({ ...request, category: 'picture', file: photo }, seedDir, null)).rejects.toThrow(/--width/);
     });
+  });
+});
+
+describe('planFit', () => {
+  it('scales uniformly from one axis', () => {
+    const plan = planFit([2, 1, 0.5], { height: 0.8 });
+    expect(plan.scales).toEqual([0.8, 0.8, 0.8]);
+    expect(plan.distortion).toBe(0);
+  });
+
+  it('stretches evenly around the uniform scale', () => {
+    const plan = planFit([1, 1, 1], { width: 1.06, height: 1, depth: 0.94 });
+    const uniform = Math.cbrt(1.06 * 0.94);
+    expect(plan.stretch[0]).toBeCloseTo(1.06 / uniform - 1, 9);
+    expect(plan.stretch[2]).toBeCloseTo(0.94 / uniform - 1, 9);
+  });
+
+  it('allows exactly the limit and no more', () => {
+    expect(planFit([1, 1, 1], { width: 1.15, height: 1 }).distortion).toBeCloseTo(0.15, 9);
+    expect(() => planFit([1, 1, 1], { width: 1.16, height: 1 })).toThrow(/limit/);
+    expect(() => planFit([1, 1, 1], { width: 1.01, height: 1 }, 0)).toThrow(/limit/);
+  });
+
+  it('refuses a fit to an axis the model is flat along, and bad sizes', () => {
+    expect(() => planFit([1, 1, 0], { width: 1, depth: 0.01 })).toThrow(/flat along its depth/);
+    expect(() => planFit([1, 1, 1], { width: -1 })).toThrow(/positive/);
+    expect(() => planFit([1, 1, 1], {})).toThrow(/at least one/);
+  });
+});
+
+describe('describeStretch', () => {
+  it('signs each axis', () => {
+    expect(describeStretch([0.02, 0, -0.015])).toBe('width +2.0 %, height +0.0 %, depth -1.5 %');
   });
 });
 
