@@ -1,6 +1,7 @@
 import { isDesignId } from '../../../src/model/ids';
 import { readDesignBody, summaryMetadata } from '../../_lib/designs';
 import { jsonError, type Env } from '../../_lib/env';
+import { mentionsPrivateAsset } from '../../_lib/private';
 import { snapshotKey } from '../../_lib/snapshots';
 
 /** The public read behind a share link. A snapshot never changes, so browsers may keep it for a day. */
@@ -33,6 +34,8 @@ export const onRequestPut: PagesFunction<Env, 'id'> = async ({ params, request, 
 
   const body = await readDesignBody(request, id);
   if (body instanceof Response) return body;
+  // The editor puts a stand-in in place of every private asset. This catches a client that doesn't.
+  if (mentionsPrivateAsset(new TextDecoder().decode(body.bytes))) return jsonError(400, 'A snapshot may not name a private asset');
 
   const key = snapshotKey(id);
   if (await env.BUCKET.head(key)) return jsonError(409, 'Snapshot already exists');

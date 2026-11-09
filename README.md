@@ -42,6 +42,8 @@ It normalizes the model to meters with its pivot at bottom center, compresses it
 
 A model is assumed to be in meters, as glTF specifies. If it isn't, correct it with `--scale 0.01` or give its real size, such as `--height 0.75`. Models should face +z; `--rotate-y <degrees>` turns one that doesn't. Add `--local` to upload to the local R2 instead, and `--help` for every option.
 
+Add `--private` for an asset that only you should see, such as a model made from a shop's pictures. It goes to the personal catalog in R2 under a random id, and never to `seed/` or git. The editor lists it, marked Private, and a share link shows a plain box of its size in its place. R2 holds the only copy, so keep the source file.
+
 ## Assets
 
 Every asset is CC0 1.0, from [Poly Haven](https://polyhaven.com). `seed/catalog.json` records each one's license and source URL.

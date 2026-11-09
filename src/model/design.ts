@@ -1,3 +1,4 @@
+import { isPrivateAssetId, PRIVATE_STAND_IN } from './catalog';
 import { generateId } from './ids';
 
 export type Vec2 = [number, number];
@@ -93,12 +94,22 @@ export function renamedDesign(design: Design, name: string): Design {
 
 /**
  * What a share link shows: an independent copy under the snapshot's own id. It must not carry the live
- * design's id, because that id is enough to read the design and all its future edits. `view` is where
- * the owner was looking, which the viewer opens at.
+ * design's id, because that id is enough to read the design and all its future edits. Nor does it carry
+ * a private asset's id: each private item keeps its place and size, and names `PRIVATE_STAND_IN` instead,
+ * so the viewer draws a box. `view` is where the owner was looking, which the viewer opens at.
  */
 export function snapshotOf(design: Design, snapshotId: string, view: Pick<DesignCamera, 'position' | 'target'> | null): Design {
-  return { ...structuredClone(design), id: snapshotId, cameras: view ? [{ name: 'Shared view', position: view.position, target: view.target }] : [] };
+  const copy = structuredClone(design);
+  return {
+    ...copy,
+    id: snapshotId,
+    items: copy.items.map((item) => (isPrivateAssetId(item.assetId) ? { ...item, assetId: PRIVATE_STAND_IN } : item)),
+    cameras: view ? [{ name: 'Shared view', position: view.position, target: view.target }] : [],
+  };
 }
+
+/** How many of a design's items are private, or in a snapshot stand in for one. */
+export const privateItemCount = (items: readonly Item[]) => items.filter((item) => isPrivateAssetId(item.assetId) || item.assetId === PRIVATE_STAND_IN).length;
 
 /** An independent copy under its own id. Items keep their ids, which are unique only within a design. */
 export function copiedDesign(design: Design, id: string, updatedAt: string): Design {

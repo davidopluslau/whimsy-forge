@@ -3,7 +3,7 @@ import { useCatalog } from '../api/catalog';
 import { ApiError } from '../api/designs';
 import { getSnapshotJson } from '../api/snapshots';
 import type { CatalogAsset } from '../model/catalog';
-import type { Design } from '../model/design';
+import { type Design, privateItemCount } from '../model/design';
 import { isDesignId } from '../model/ids';
 import { NewerSchemaError, parseDesign, UnreadableDesignError } from '../model/migrate';
 import { viewPresets, type ViewPreset } from '../scene/cameraViews';
@@ -62,6 +62,7 @@ function SnapshotScene({ design }: { design: Design }) {
   const { catalog } = useCatalog();
   const catalogById = useMemo(() => new Map<string, CatalogAsset>(catalog.status === 'ready' ? catalog.assets.map((asset) => [asset.id, asset]) : []), [catalog]);
   const presets = useMemo(() => viewPresets(design.room, buildRoomGeometry(design.room).bounds, design.cameras), [design]);
+  const privateItems = useMemo(() => privateItemCount(design.items), [design]);
 
   const [request, setRequest] = useState<ViewRequest>(() => ({ view: presets[0]!.view }));
   // Which button is lit. Orbiting turns it off, and pressing the button again goes back to that view.
@@ -144,6 +145,11 @@ function SnapshotScene({ design }: { design: Design }) {
         <button type="button" className="button-quiet viewer__panel" title="Save a PNG of this view" onClick={() => void exportImage()}>
           Export image
         </button>
+        {privateItems > 0 && (
+          <p className="viewer__panel viewer__note" data-testid="viewer-private-note">
+            {privateItems === 1 ? 'One item is private and shows' : `${privateItems} items are private and show`} as a plain box.
+          </p>
+        )}
         {exportFailed && (
           <p className="viewer__panel viewer__error" role="alert">
             Could not export the image.

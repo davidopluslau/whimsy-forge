@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CatalogState } from '../api/catalog';
-import { assetHref, type CatalogAsset, type Category, CATEGORY_LABELS, categoriesIn, filterCatalog } from '../model/catalog';
+import { assetHref, type CatalogAsset, type Category, CATEGORY_LABELS, categoriesIn, filterCatalog, isPrivateAssetId } from '../model/catalog';
 import { formatLength, type LengthUnit } from '../model/units';
 import { AssetPreview } from '../scene/AssetPreview';
 import { ASSET_DRAG_TYPE } from './drag';
@@ -66,6 +66,7 @@ function PreviewDialog({ asset, unit, onClose, onPlace }: PreviewDialogProps) {
             Source
           </a>
         </p>
+        {isPrivateAssetId(asset.id) && <p className="asset-preview__private">Private: only you can see it. A share link shows a plain box of its size instead.</p>}
         <div className="asset-preview__actions">
           <button
             type="button"
@@ -135,6 +136,14 @@ export function CatalogPanel({ unit, catalog, retry, onPlace, onAddPhoto }: Cata
           </button>
         </div>
       )}
+      {catalog.status === 'ready' && catalog.privateFailed && (
+        <div className="catalog__message" role="alert" data-testid="private-catalog-failed">
+          <p>Your private items couldn't be loaded. If you're signed out, sign in again.</p>
+          <button type="button" className="button-quiet" onClick={retry}>
+            Try again
+          </button>
+        </div>
+      )}
       {catalog.status === 'ready' && matches.length === 0 && (
         <p className="catalog__message">{assets.length === 0 ? 'The catalog is empty.' : 'Nothing matches that search.'}</p>
       )}
@@ -146,6 +155,7 @@ export function CatalogPanel({ unit, catalog, retry, onPlace, onAddPhoto }: Cata
               type="button"
               className="catalog__tile"
               data-asset-id={asset.id}
+              data-private={isPrivateAssetId(asset.id) || undefined}
               draggable
               onDragStart={(event) => {
                 event.dataTransfer.setData(ASSET_DRAG_TYPE, asset.id);
@@ -155,6 +165,7 @@ export function CatalogPanel({ unit, catalog, retry, onPlace, onAddPhoto }: Cata
             >
               <img src={assetHref(asset.thumbnailUrl)} alt="" width={256} height={256} loading="lazy" decoding="async" />
               <span className="catalog__name">{asset.name}</span>
+              {isPrivateAssetId(asset.id) && <span className="catalog__private">Private</span>}
             </button>
           </li>
         ))}

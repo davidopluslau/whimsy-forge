@@ -1,0 +1,15 @@
+[
+  {
+    "id": "private-E2eFixturePrivateTbl01",
+    "name": "My shop table",
+    "kind": "model",
+    "category": "table",
+    "tags": [],
+    "mount": "floor",
+    "url": "private/assets/private-E2eFixturePrivateTbl01/model.glb",
+    "thumbnailUrl": "private/assets/private-E2eFixturePrivateTbl01/thumbnail.webp",
+    "dimensions": [0.55, 0.551, 0.45],
+    "license": "CC0 1.0",
+    "sourceUrl": "https://polyhaven.com/a/side_table_01"
+  }
+]

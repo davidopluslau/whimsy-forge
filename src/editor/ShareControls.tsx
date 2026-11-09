@@ -1,5 +1,6 @@
 import { type MutableRefObject, useEffect, useRef, useState } from 'react';
 import { ApiError } from '../api/designs';
+import { privateItemCount } from '../model/design';
 import { imageFileName, saveBlob, type SceneCapture, viewImage } from '../scene/capture';
 import { useDesignStore } from '../store/designStore';
 import { shareDesign } from './share';
@@ -7,7 +8,8 @@ import { shareDesign } from './share';
 type ShareState =
   | { status: 'closed' }
   | { status: 'sharing' }
-  | { status: 'shared'; url: string; copied: boolean }
+  /** `privateItems` is how many items the link shows as plain boxes. */
+  | { status: 'shared'; url: string; copied: boolean; privateItems: number }
   | { status: 'failed'; message: string };
 
 const failureMessage = (error: unknown) =>
@@ -39,8 +41,9 @@ export function ShareControls({ capture }: { capture: MutableRefObject<SceneCapt
   async function share() {
     setState({ status: 'sharing' });
     try {
-      const url = await shareDesign(useDesignStore.getState().design, capture.current);
-      setState({ status: 'shared', url, copied: await copied(url) });
+      const { design } = useDesignStore.getState();
+      const url = await shareDesign(design, capture.current);
+      setState({ status: 'shared', url, copied: await copied(url), privateItems: privateItemCount(design.items) });
     } catch (error) {
       setState({ status: 'failed', message: failureMessage(error) });
     }
@@ -83,6 +86,11 @@ export function ShareControls({ capture }: { capture: MutableRefObject<SceneCapt
             <p role="status">{state.copied ? 'Link copied. Anyone with it can view this design, without signing in.' : 'Copy this link. Anyone with it can view this design, without signing in.'}</p>
             <input className="share__link" data-testid="share-link" type="text" readOnly aria-label="Share link" value={state.url} onFocus={(event) => event.target.select()} />
             <p className="share__note">It shows the design as it is now. Later edits won't change it; share again to send a newer version.</p>
+            {state.privateItems > 0 && (
+              <p className="share__note" data-testid="share-private-note">
+                {state.privateItems === 1 ? 'One private item shows' : `${state.privateItems} private items show`} as a plain box of the same size. Private items never leave your account.
+              </p>
+            )}
           </>
         )}
         <div className="share__actions">

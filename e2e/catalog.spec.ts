@@ -31,7 +31,8 @@ test('GET /api/catalog is public, revalidated and supports 304', async ({ reques
 
 test('the panel lists every seed model, with thumbnails, and filters by search and category', async ({ page, context, baseURL }) => {
   const panel = await openEditor(page, context, baseURL);
-  const tiles = panel.locator('.catalog__tile');
+  // The e2e server also seeds one private asset, which private.spec.ts covers.
+  const tiles = panel.locator('.catalog__tile:not([data-private])');
   await expect(tiles).toHaveCount(models.length);
 
   for (const label of ['Sofas', 'Chairs', 'Tables', 'Beds', 'Shelves', 'Lamps', 'Plants']) {
@@ -73,7 +74,7 @@ test('the panel offers a retry when the catalog fails to load', async ({ page, c
   failing = false;
   await panel.getByRole('button', { name: 'Try again' }).click();
   await expect(panel).toHaveAttribute('data-status', 'ready');
-  await expect(panel.locator('.catalog__tile')).toHaveCount(models.length);
+  await expect(panel.locator('.catalog__tile:not([data-private])')).toHaveCount(models.length);
 });
 
 test('the panel can be closed to give the plan its width back, keeping its search', async ({ page, context, baseURL }) => {

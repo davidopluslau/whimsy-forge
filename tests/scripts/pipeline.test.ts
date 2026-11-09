@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { Document, NodeIO } from '@gltf-transform/core';
 import sharp from 'sharp';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { isCatalogAsset } from '../../src/model/catalog';
+import { isCatalogAsset, PRIVATE_ASSET_ID } from '../../src/model/catalog';
 import { createIO, measure, processModel } from '../../scripts/import/model';
 import { formatCatalog, importAsset, slugify, upsertCatalog } from '../../scripts/import/pipeline';
 
@@ -162,6 +162,42 @@ describe('importAsset', () => {
     const failing = { render: async () => Promise.reject(new Error('no browser')) };
     await expect(importAsset({ ...request, file: table }, seedDir, failing)).rejects.toThrow('no browser');
     expect(catalog()).toHaveLength(1);
+  });
+
+  it('refuses a public id that would read as private', async () => {
+    await expect(importAsset({ ...request, file: table, id: 'private-desk' }, seedDir, thumbnails)).rejects.toThrow(/marks private/);
+  });
+
+  describe('as a private asset', () => {
+    const privateCatalog = () => JSON.parse(readFileSync(join(seedDir, 'private', 'catalog.json'), 'utf8')) as { id: string }[];
+
+    it('goes to the personal catalog under a random id, and nothing goes to the public one', async () => {
+      const { asset, files } = await importAsset({ ...request, file: table, name: 'Shop table', scope: 'private' }, seedDir, thumbnails);
+
+      expect(asset.id).toMatch(PRIVATE_ASSET_ID);
+      expect(asset.id).not.toContain('table');
+      expect(isCatalogAsset(asset, 'private')).toBe(true);
+      expect(asset).toMatchObject({ name: 'Shop table', url: `private/assets/${asset.id}/model.glb`, thumbnailUrl: `private/assets/${asset.id}/thumbnail.webp`, sourceUrl: 'https://example.com/source' });
+      expect(files.map((file) => file.key)).toEqual([asset.url, asset.thumbnailUrl, 'private/catalog.json']);
+      expect(privateCatalog().map((entry) => entry.id)).toEqual([asset.id]);
+      expect(catalog()).toHaveLength(1);
+    });
+
+    it('adds to the personal catalog it was given, and never reuses an id', async () => {
+      const first = await importAsset({ ...request, file: table, scope: 'private' }, seedDir, thumbnails);
+      const second = await importAsset({ ...request, file: table, scope: 'private' }, seedDir, thumbnails);
+      expect(second.asset.id).not.toBe(first.asset.id);
+      expect(privateCatalog().map((entry) => entry.id)).toEqual([first.asset.id, second.asset.id]);
+    });
+
+    it('refuses a chosen id or a replacement, which would make the id guessable', async () => {
+      await expect(importAsset({ ...request, file: table, id: 'my-table', scope: 'private' }, seedDir, thumbnails)).rejects.toThrow(/random id/);
+      await expect(importAsset({ ...request, file: table, replace: true, scope: 'private' }, seedDir, thumbnails)).rejects.toThrow(/random id/);
+    });
+
+    it('still records a license and source', async () => {
+      await expect(importAsset({ ...request, file: table, license: '', scope: 'private' }, seedDir, thumbnails)).rejects.toThrow(/license/);
+    });
   });
 
   describe('with an image', () => {

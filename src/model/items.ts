@@ -246,7 +246,7 @@ export function pointInPolygon(point: Vec2, polygon: Vec2[]): boolean {
 }
 
 /** A lamp's light in the room: world position, plus the color and strength from its catalog entry. */
-export type PlacedLight = Omit<LampLight, 'position'> & { itemId: string; position: Vec3 };
+export type PlacedLight = Omit<LampLight, 'position'> & { itemId: string; assetId: string; position: Vec3 };
 
 /**
  * The lights the room's lamps give, in the order they were placed. Every light costs shader time on every
@@ -263,6 +263,7 @@ export function lampLights(items: readonly Item[], catalog: ReadonlyMap<string, 
     const [x, y, z] = light.position;
     lights.push({
       itemId: item.id,
+      assetId: item.assetId,
       color: light.color,
       intensity: light.intensity,
       distance: light.distance,

@@ -46,6 +46,17 @@ describe('PUT /api/snapshots/:id', () => {
     expect(bucket.objects.size).toBe(0);
   });
 
+  it('refuses a snapshot that names a private asset, so a share link never leads to one', async () => {
+    const { env, bucket } = createEnv();
+    const item = (assetId: string) => ({ id: 'i', assetId, position: [0, 0, 0], rotationY: 0, size: [1, 1, 1], mount: 'floor' });
+    const response = await call(putSnapshot as never, put(body({ items: [item('private-AbCdEfGhIjKlMnOpQrSt_-')] })), env, { id: ID });
+    expect(response.status).toBe(400);
+    expect(bucket.objects.size).toBe(0);
+
+    // The stand-in the editor puts in its place, and a name that only looks similar, are fine.
+    expect((await call(putSnapshot as never, put(body({ name: 'private-party', items: [item('private')] })), env, { id: ID })).status).toBe(201);
+  });
+
   it('refuses a malformed id, invalid JSON and an oversized body', async () => {
     const { env, bucket } = createEnv();
     expect((await call(putSnapshot as never, put(body(), 'short'), env, { id: 'short' })).status).toBe(400);
