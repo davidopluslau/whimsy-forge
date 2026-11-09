@@ -3,14 +3,14 @@
 //        node measure.mjs --all       (every out/<gen>/<item>.glb against its capture.json)
 // Stretch uses PR #20's rule: max(axis scale) / min(axis scale) - 1, limit 15 %.
 import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
-const req = createRequire('C:/Users/david/code/whimsy-forge/package.json');
+import { pathToFileURL, fileURLToPath } from 'node:url';
+import { join, dirname } from 'node:path';
+const req = createRequire(join(dirname(fileURLToPath(import.meta.url)), '..', 'app', 'package.json'));
 const load = (m) => import(pathToFileURL(req.resolve(m)).href);
 const { NodeIO, getBounds } = await load('@gltf-transform/core');
 const { ALL_EXTENSIONS } = await load('@gltf-transform/extensions');
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
-import { join, basename, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { basename } from 'node:path';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SHOP = join(ROOT, '..', 'shop-set');

@@ -3,9 +3,9 @@
 Usage: python -I run_generators.py <generator> [item ...]
 generator: trellis2 | hunyuan21 | sf3d
 Outputs go to ../out/<generator>/<item>.glb and results are appended to ../out/runs.jsonl.
-Nothing here is committed: inputs are IKEA images, outputs are derived from them.
+Nothing here is committed: inputs are shop images, outputs are derived from them.
 """
-import json, shutil, sys, time, traceback
+import json, os, shutil, sys, time, traceback
 from pathlib import Path
 from gradio_client import Client, handle_file
 
@@ -50,7 +50,6 @@ RUNNERS = {
 
 def hf_token():
     """HF_TOKEN from the environment or from ../.env (outside the repo). Never printed."""
-    import os
     if os.environ.get("HF_TOKEN"):
         return os.environ["HF_TOKEN"]
     env = ROOT / ".env"
@@ -61,32 +60,37 @@ def hf_token():
     return None
 
 
+def generate(gen, item, token):
+    """One attempt. Saves out/<gen>/<item>.<ext>, appends to out/runs.jsonl and returns the record."""
+    space, fn = RUNNERS[gen]
+    (OUT / gen).mkdir(parents=True, exist_ok=True)
+    img = product_image(item)
+    rec = {"generator": gen, "space": space, "item": item, "input": img.name,
+           "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    t0 = time.time()
+    try:
+        client = Client(space, token=token, verbose=False)
+        path = fn(client, img)
+        src = Path(path if isinstance(path, str) else path["path"])
+        dst = OUT / gen / f"{item}{src.suffix}"
+        shutil.copy(src, dst)
+        rec.update(ok=True, file=str(dst.relative_to(ROOT)), bytes=dst.stat().st_size)
+    except Exception as e:
+        rec.update(ok=False, error=f"{type(e).__name__}: {e}"[:600])
+        traceback.print_exc()
+    rec["seconds"] = round(time.time() - t0, 1)
+    with open(OUT / "runs.jsonl", "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec) + "\n")
+    return rec
+
+
 def main():
     gen = sys.argv[1]
     token = hf_token()
     print("token:", "found" if token else "none (anonymous quota)")
-    items = sys.argv[2:] or ITEMS
-    space, fn = RUNNERS[gen]
-    (OUT / gen).mkdir(parents=True, exist_ok=True)
-    for item in items:
-        img = product_image(item)
-        rec = {"generator": gen, "space": space, "item": item, "input": img.name,
-               "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
-        t0 = time.time()
-        try:
-            client = Client(space, token=token, verbose=False)
-            path = fn(client, img)
-            src = Path(path if isinstance(path, str) else path["path"])
-            dst = OUT / gen / f"{item}{src.suffix}"
-            shutil.copy(src, dst)
-            rec.update(ok=True, file=str(dst.relative_to(ROOT)), bytes=dst.stat().st_size)
-        except Exception as e:
-            rec.update(ok=False, error=f"{type(e).__name__}: {e}"[:600])
-            traceback.print_exc()
-        rec["seconds"] = round(time.time() - t0, 1)
+    for item in sys.argv[2:] or ITEMS:
+        rec = generate(gen, item, token)
         print(json.dumps(rec), flush=True)
-        with open(OUT / "runs.jsonl", "a", encoding="utf-8") as f:
-            f.write(json.dumps(rec) + "\n")
         if "quota" in rec.get("error", "").lower():
             print("Daily GPU quota used up; stopping. Rerun after it resets.")
             break
