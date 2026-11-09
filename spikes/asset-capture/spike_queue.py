@@ -32,6 +32,53 @@ def log(msg):
         f.write(line + "\n")
 
 
+PS_AUMID = r"{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe"
+
+
+def notify(title, body):
+    """Windows toast through built-in WinRT, via a hidden PowerShell. Clicking it opens STATUS.md.
+    Never raises: a missed notification must not stop the queue."""
+    import base64
+    from xml.sax.saxutils import escape, quoteattr
+    status_uri = (OUT / "STATUS.md").as_uri()
+    xml = (f"<toast activationType=\"protocol\" launch={quoteattr(status_uri)}><visual><binding template=\"ToastGeneric\">"
+           f"<text>{escape(title)}</text><text>{escape(body)}</text></binding></visual></toast>")
+    ps = (
+        "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null;"
+        "[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null;"
+        "$x = New-Object Windows.Data.Xml.Dom.XmlDocument;"
+        f"$x.LoadXml(@'\n{xml}\n'@);"
+        "$t = [Windows.UI.Notifications.ToastNotification]::new($x);"
+        f"[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{PS_AUMID}').Show($t)"
+    )
+    try:
+        r = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden",
+                            "-EncodedCommand", base64.b64encode(ps.encode("utf-16-le")).decode()],
+                           capture_output=True, text=True, timeout=60, creationflags=NO_WINDOW)
+        if r.returncode != 0:
+            log(f"notification failed: {(r.stderr or r.stdout).strip()[:300]}")
+    except Exception as e:
+        log(f"notification failed: {e}")
+
+
+def model_summary(gen, item, imported):
+    """One line for a toast, e.g. 'KIVIK sofa (trellis2): 16.8 % stretch, OVER the 15 % limit'."""
+    import re
+    cap = json.loads((rg.SHOP / item / "capture.json").read_text(encoding="utf-8"))
+    name = f"{cap['name'].split(',')[0]} ({gen})"
+    m = re.search(r"Stretched ([\d.]+) %", imported)
+    stretch = f"{m.group(1)} % stretch" if m else "no stretch"
+    if imported.startswith("exact fit:"):
+        verdict = "within the 15 % limit"
+    elif imported.startswith("exact fit, OVER"):
+        verdict = "OVER the 15 % limit"
+    elif imported.startswith("uniform"):
+        verdict = "over 30 %, scaled evenly"
+    else:
+        return f"{name}: generated, but {imported}"
+    return f"{name}: {stretch}, {verdict}"
+
+
 def token():
     t = rg.hf_token()
     if t:
@@ -135,6 +182,8 @@ def main():
                 imports[(gen, item)] = import_local(gen, item, rec)
                 log(f"done {gen} / {item} in {rec['seconds']} s; {imports[(gen, item)]}")
                 imports_file.write_text(json.dumps({"/".join(k): v for k, v in imports.items()}, indent=1))
+                write_status(runs(), imports)  # so a click on the toast shows the new row
+                notify("Spike 0: new model imported", model_summary(gen, item, imports[(gen, item)]))
                 progressed = True
                 break  # re-read history and start from the top priority again
             if "quota" in rec.get("error", "").lower():
@@ -151,6 +200,13 @@ def main():
     if all(job_state(g, i, history) != "pending" for g in ORDER for i in rg.ITEMS):
         log("Queue finished; disabling the scheduled task.")
         subprocess.run(["schtasks", "/Change", "/TN", TASK, "/DISABLE"], capture_output=True, creationflags=NO_WINDOW)
+        marker = OUT / ".finished-notified"
+        if not marker.exists():
+            states = [job_state(g, i, history) for g in ORDER for i in rg.ITEMS]
+            per_gen = ", ".join(f"{g} {sum(job_state(g, i, history) == 'done' for i in rg.ITEMS)}/5" for g in ORDER)
+            notify("Spike 0 queue finished",
+                   f"{states.count('done')} models done, {states.count('gave up')} gave up ({per_gen}). Click for STATUS.md.")
+            marker.write_text(time.strftime("%Y-%m-%d %H:%M:%S"))
 
 
 if __name__ == "__main__":
