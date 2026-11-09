@@ -2,9 +2,10 @@ import { useGLTF, useTexture } from '@react-three/drei';
 import { useThree } from '@react-three/fiber';
 import { Component, type ReactNode, Suspense, useEffect, useMemo } from 'react';
 import { SRGBColorSpace } from 'three';
+import { isPrivateAssetId } from '../model/catalog';
 import type { Item, Vec3 } from '../model/design';
 import type { ItemImage } from '../model/items';
-import { CAPTURE_HIDDEN } from './capture';
+import { CAPTURE_HIDDEN, PRIVATE_CONTENT, PRIVATE_STAND_IN_MARK } from './capture';
 import { useShadowRefresh } from './lighting';
 import { fitModelToBudget } from './textureBudget';
 
@@ -14,9 +15,10 @@ const RUG_BACKING_COLOR = '#8a6f5a';
 const OVERLAP_COLOR = '#c0392b';
 
 /** Until an item's image arrives, or if it never does, a box of its real size stands in for it. */
-function Placeholder({ size }: { size: Vec3 }) {
+function Placeholder({ size, standIn = false }: { size: Vec3; standIn?: boolean }) {
   return (
-    <mesh position={[0, size[1] / 2, 0]}>
+    // A stand-in is drawn only in a picture made for someone else, in place of a private asset.
+    <mesh position={[0, size[1] / 2, 0]} {...(standIn ? { visible: false, userData: PRIVATE_STAND_IN_MARK, raycast: () => null } : {})}>
       <boxGeometry args={size} />
       <meshStandardMaterial color={PLACEHOLDER_COLOR} transparent opacity={0.6} />
     </mesh>
@@ -116,6 +118,7 @@ export function ItemMesh({ item, image, overlapping, maxModelTexture, onSelect }
   // Also runs when the item goes away, so that its shadow goes too.
   useShadowRefresh([item.position, item.rotationY, item.size, image?.path]);
 
+  const isPrivate = isPrivateAssetId(item.assetId);
   const content = image === null ? <Placeholder size={item.size} /> : image.kind === 'model' ? <ModelItem path={image.path} maxTexture={maxModelTexture} /> : image.kind === 'picture' ? <Picture path={image.path} size={item.size} /> : <Rug path={image.path} size={item.size} />;
 
   return (
@@ -132,9 +135,12 @@ export function ItemMesh({ item, image, overlapping, maxModelTexture, onSelect }
           : undefined
       }
     >
-      <ItemBoundary fallback={<Placeholder size={item.size} />}>
-        <Suspense fallback={<Placeholder size={item.size} />}>{content}</Suspense>
-      </ItemBoundary>
+      <group {...(isPrivate ? { userData: PRIVATE_CONTENT } : {})}>
+        <ItemBoundary fallback={<Placeholder size={item.size} />}>
+          <Suspense fallback={<Placeholder size={item.size} />}>{content}</Suspense>
+        </ItemBoundary>
+      </group>
+      {isPrivate && <Placeholder size={item.size} standIn />}
       {overlapping && item.mount === 'floor' && (
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.004, 0]} userData={CAPTURE_HIDDEN}>
           <planeGeometry args={[item.size[0], item.size[2]]} />

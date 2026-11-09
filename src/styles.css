@@ -240,6 +240,11 @@ a {
   line-height: 1.25;
 }
 
+.catalog__private {
+  font-size: 0.6875rem;
+  color: var(--muted);
+}
+
 .asset-preview {
   width: min(720px, calc(100vw - 32px));
   padding: 0;
@@ -946,6 +951,14 @@ a {
   margin: 0;
   padding: 6px 10px;
   color: var(--danger);
+}
+
+.viewer__note {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 6px 10px;
+  color: var(--muted);
 }
 
 /* Only keyboard users see this, and they need it on every control. */

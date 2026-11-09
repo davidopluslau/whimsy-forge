@@ -54,9 +54,10 @@ flowchart LR
             snapshots["api/snapshots/:id"]
             assets["api/assets/*"]
             catalog["api/catalog"]
+            personal["api/private/catalog, api/private/assets/*<br/>token check on reads too"]
             sharePage["v/:id<br/>the app's page + link-preview tags"]
         end
-        r2[("R2 bucket: whimsy-forge<br/>designs/, snapshots/, assets/, catalog.json")]
+        r2[("R2 bucket: whimsy-forge<br/>designs/, snapshots/, assets/, catalog.json, private/")]
     end
 
     owner --> access --> editorGuard --> pages
@@ -70,6 +71,7 @@ flowchart LR
     apiGuard --> snapshots --> r2
     apiGuard --> assets --> r2
     apiGuard --> catalog --> r2
+    apiGuard --> personal --> r2
 ```
 
 | Part | Technology | Where |
@@ -100,6 +102,7 @@ Changing any of these is a major decision, and must be recorded here.
 - **Design and snapshot IDs are unguessable:** 128 random bits as 22 base64url characters (`src/model/ids.ts`).
 - **No secrets in the bundle.** The JavaScript is public, including the editor's chunk; only the `/editor` page route and API writes are guarded.
 - **Fail closed.** Missing or malformed Access configuration denies the request.
+- **A share link never exposes a private asset.** A private asset is one whose id starts with `private-`, so anything holding only an id can tell. Its files and catalog entry are readable only with the owner's token. A snapshot names `private` in its place (`snapshotOf`), the server refuses a snapshot that names a private id, the viewer never requests the personal catalog, and the link-preview image draws a box in its place. Letting private assets into share links is the owner's decision to make, and would change every one of these.
 - **Every third-party asset records its license and source URL** in the catalog. The import refuses an asset without them, and `parseCatalog` leaves such an entry out of the panel.
 - **A model file is in meters, with its pivot at bottom center and its front facing +z,** and its catalog `dimensions` are measured from the finished file. `scripts/import/model.ts` guarantees the size and pivot; `--rotate-y` sets the facing by hand.
 
@@ -131,7 +134,7 @@ flowchart TD
     store --> model
     api --> model
     model --> materials
-    fns -->|"ids.ts only"| model
+    fns -->|"ids.ts and catalog.ts only"| model
     scripts -->|"catalog.ts only"| model
 ```
 
@@ -154,6 +157,7 @@ Types are in `src/model/design.ts`, `src/model/catalog.ts`, `src/model/materials
 - **Opening:** belongs to a wall by `wallId`. `offset` runs along the wall from its start to the opening's near edge, and `sill` is the height of its bottom edge above the floor (always 0 for a door).
 - **Assets are referenced by ID.** An ID that is unset or no longer in the catalog is not an error: the surface falls back to a plain color.
 - **Catalog asset** (`model`, `picture` or `rug`): `id`, `name`, `kind`, `category`, `tags`, `mount`, `url`, `thumbnailUrl`, `dimensions`, `license`, `sourceUrl`. `category` is a closed list in `catalog.ts`, and `mount` is where an item goes when first placed. `dimensions` is always [x, y up, z]: a picture's z is its frame depth and a rug's y its thickness. A model that gives light also has `light`: its bulb's `position` from the pivot, `color`, `intensity` and `distance`. An import keeps it only if the request passes it, so `scripts/seed-models.ts` holds the seed lamps' values, and a newly imported lamp gets its `light` added to `seed/catalog.json` by hand.
+- **Private catalog asset:** the same shape, in the personal catalog. Its id is `private-` and 22 random base64url characters, never from its name, and its files are under `private/assets/<id>/`. Nothing else marks it, so the schema didn't change. `parseCatalog(doc, scope)` keeps each catalog to its own kind of entry: the public one drops anything private, and the personal one drops anything public or with a guessable id. An item placed from one names its id like any other; a snapshot names `PRIVATE_STAND_IN` (`private`) instead, which no asset has, so the viewer draws the box it draws for any missing asset.
 - **Material asset:** a tiling PBR texture. `url` is its color map, alongside `normalUrl`, `roughnessUrl`, the `surface` it suits, a plain fallback `color`, `license` and `sourceUrl`. `dimensions` is the size of one tile in meters, and `thumbnailUrl` is empty because nothing displays one. Optional `roughness` and `tint` multiply the roughness and color maps, to calibrate a scan: the source parquet is nearly a mirror, and the source "white" plaster is mid-grey.
 - **Environment asset** (`kind: 'environment'`): `id`, `name`, `url` of a Radiance `.hdr`, `license`, `sourceUrl`. It isn't placed, so `parseCatalog` leaves it out of the panel.
 
@@ -266,6 +270,7 @@ sequenceDiagram
 - **A snapshot is a copy of the design in the browser's store,** including edits not saved yet, under its own ID (`snapshotOf` in `src/model/design.ts`). Each Share makes a new snapshot and link, and earlier links keep working. Deleting the design leaves its snapshots.
 - **A snapshot is loaded like any design,** through `parseDesign` → `migrate`, so old links keep opening after schema changes. It isn't rewritten: the migration runs on each view.
 - **The preview goes first, and is optional.** A link is complete from the moment it exists. If the preview fails, the share goes ahead and the link posts without a picture.
+- **Private items become boxes.** The snapshot keeps each private item's place and size under the stand-in id, and the share dialog and the viewer each say how many there are. The preview is drawn from the editor's own scene, where private models are loaded, so `ItemMesh` marks each private model and lamp light `PRIVATE_CONTENT` beside a hidden box marked `PRIVATE_STAND_IN_MARK`. `linkPreviewImage` asks `renderToCanvas` to redact: it swaps the two for that one draw and redraws the shadow map, which would otherwise keep the model's shadow (`prepareForCapture` in `src/scene/capture.ts`). The owner's own Export image keeps private models as they are.
 - **Link-preview tags are written by a Function,** `functions/v/[id].ts`, because crawlers don't run JavaScript. It fetches the app's page through the `ASSETS` binding and adds tags. It reads only R2 metadata and never parses the document, to stay well inside the CPU limit. A missing snapshot gets the plain page with status 404, and a storage failure gets the plain page with status 200, so the app can report it. Each page is marked `noindex`.
 - **Camera presets:** the viewer opens at the shared view, if any, and offers Overview, Top and, for a closed room, Eye level. Views are worked out for the canvas's shape: on a portrait phone, a shared view from outside the room moves back along its line to fit, and one from inside stays put.
 - **Export image** is in both the editor and the viewer. It saves a PNG of the current view, at least 1920 px on its longest side. In the editor with the 3D pane hidden, it saves a framed overview at 16:9.
@@ -281,12 +286,14 @@ All routes are in `functions/`. Responses are same-origin, so there is no CORS.
 | `PUT /api/designs/:id` | Owner, same origin | Stores the received bytes as they are, and returns 204 with the new `ETag`. With `If-Match`, it stores only if that is still the current tag, and otherwise returns 412, including when the design was deleted. Without it, the write is unconditional. 400 for bad UTF-8 or JSON, a body `id` that doesn't match the URL, or a missing numeric `schemaVersion`. 413 over 1 MiB. |
 | `DELETE /api/designs/:id` | Owner, same origin | Removes the design and returns 204, even if it was already gone. 400 for a malformed ID. |
 | `GET /api/snapshots/:id` | Public | The stored bytes with a one-day browser cache, `ETag` and 304 support. 400 for a malformed ID, 404 if absent. |
-| `PUT /api/snapshots/:id` | Owner, same origin | Stores the received bytes as they are, with the name as metadata, and returns 201. 409 if the ID is taken: it never replaces a snapshot. Otherwise validated as `PUT /api/designs/:id` is, so the body's `id` must be the snapshot's. |
+| `PUT /api/snapshots/:id` | Owner, same origin | Stores the received bytes as they are, with the name as metadata, and returns 201. 409 if the ID is taken: it never replaces a snapshot. Otherwise validated as `PUT /api/designs/:id` is, so the body's `id` must be the snapshot's. 400 if the text holds a private asset id anywhere, found by a pattern match on the raw bytes rather than a parse. |
 | `PUT /api/snapshots/:id/preview` | Owner, same origin | Stores one JPEG at `assets/snapshots/<id>.jpg` and returns 201. 400 for a malformed ID, 415 unless the type is `image/jpeg` and the bytes are a JPEG, 413 over 2 MiB, 409 if the ID is taken. |
 | `GET /v/:id` | Public | The app's page, with link-preview tags if the snapshot exists. `no-cache` and status 200, or `no-store` and status 404 if it doesn't. |
 | `GET /api/assets/*` | Public | Objects under the `assets/` prefix only, with a one-day browser cache, `ETag` and 304 support. Uploaded photos and snapshot previews are served here too. |
 | `PUT /api/uploads/:id` | Owner, same origin | Stores one WebP photo at `assets/uploads/<id>.webp` and returns 201 with its `path`. 400 for a malformed ID, 415 unless the type is `image/webp` and the bytes are a WebP file, 413 over 2 MiB, 409 if the ID is taken. It never replaces an existing upload. |
 | `GET /api/catalog` | Public | The bucket's `catalog.json` with `Cache-Control: no-cache`, `ETag` and 304 support, so a new import shows up at once. 404 before the bucket is seeded. |
+| `GET /api/private/catalog` | Owner, or a preview's token | The personal catalog, `private/catalog.json`, with `Cache-Control: private, no-cache`, `ETag` and 304 support. 401 without a valid token, 404 before the first private import. |
+| `GET /api/private/assets/*` | Owner, or a preview's token | Objects under `private/assets/` only, with `Cache-Control: private, max-age=86400`, `ETag` and 304 support. 401 without a valid token. |
 | Any other `/api/*` | Same check as above by method | JSON 404 from `functions/api/[[path]].ts`, so it doesn't fall through to `index.html`. |
 
 The server validates only the envelope, not the document's contents: the owner is the only writer, and the client's `migrate` handles what it loads. It reads `name` and `updatedAt` from that envelope to store as metadata for the list.
@@ -300,7 +307,7 @@ flowchart TD
     req["Request"] --> path{"Path"}
     path -->|"/editor, /editor/*"| edge["Access at the edge<br/>then editor/_middleware<br/>accepts ACCESS_AUD or ACCESS_PREVIEW_AUD"]
     path -->|"/api/*"| method{"Method"}
-    method -->|"GET, HEAD, OPTIONS"| open["Public,<br/>except the list"]
+    method -->|"GET, HEAD, OPTIONS"| open["Public, except the list<br/>and api/private/*"]
     method -->|"Anything else"| token{"Valid token for<br/>ACCESS_AUD?"}
     token -->|"No"| e401["401"]
     token -->|"Yes"| origin{"Origin absent<br/>or same origin?"}
@@ -314,7 +321,8 @@ flowchart TD
 - **The Origin check exists because the token can arrive as a cookie,** which a browser would otherwise attach to a write started by another site.
 - **Reading a design is a capability, not a right.** `GET /api/designs/:id` is public, so whoever knows a live design's ID can read it and its future edits. A share link and everything the viewer fetches use the snapshot's ID instead, which reads only that frozen copy.
 - **Viewer routes need no Access changes.** The production Access application covers only `/editor`, so `/v/*` and the snapshot reads are public there. Restricted previews cover the whole hostname, so on a preview a share link needs a login, and Share itself fails with 401 because previews can't write.
-- **The design list is the one read that needs a token,** because it hands out every live design's ID. The handler (`functions/api/designs/index.ts`) checks it itself, since `api/_middleware.ts` passes every GET.
+- **Three reads need a token:** the design list, because it hands out every live design's ID, and the personal catalog and its files, which are the owner's alone. Each handler checks it itself (`functions/api/designs/index.ts`, `functions/_lib/private.ts`), since `api/_middleware.ts` passes every GET. A preview's token is accepted for all three, as previews show the owner the editor. Private responses are marked `private` so no shared cache keeps them, and the public asset route can't reach them because it serves only the `assets/` prefix.
+- **A live design names its private assets' ids.** That's safe because the ids reveal nothing and reading what they name needs a token. A snapshot, which is what a share link hands out, names none.
 - **Preview deployments can't write.** They share production's bucket. Their Access application's AUD (`ACCESS_PREVIEW_AUD`) opens `/editor` and lists designs for review, but is never accepted for writes. On a preview the editor works and shows **Not saved: signed out**, and edits stay in that origin's local draft. Never add it to `ACCESS_AUD`.
 - **`ACCESS_TEST_JWKS`** substitutes a local key set for e2e runs, and is honored only when the request host is `localhost` or `127.0.0.1`.
 - **Configuration:** `wrangler.toml` is the source of truth for bindings and variables, none of which are secret. See [setup/cloudflare.md](setup/cloudflare.md) for the dashboard steps.
@@ -329,6 +337,8 @@ flowchart TD
 | `assets/<assetId>/<file>`, including the HDRI at `assets/<assetId>/environment.hdr` | `scripts/import-asset.ts`, `scripts/seed-r2.mjs` | `GET /api/assets/*` |
 | `assets/uploads/<id>.webp` | `PUT /api/uploads/:id` | `GET /api/assets/uploads/<id>.webp` |
 | `catalog.json` | `scripts/import-asset.ts`, `scripts/seed-r2.mjs` | `GET /api/catalog` |
+| `private/assets/<assetId>/<file>` | `scripts/import-asset.ts --private` | `GET /api/private/assets/*`, owner only |
+| `private/catalog.json` | `scripts/import-asset.ts --private` | `GET /api/private/catalog`, owner only |
 
 There is no database, and D1 isn't needed: the list is one R2 `list` call with custom metadata, so it reads no documents and has no index to keep in step. The name in the metadata is percent-encoded and cut to 100 code points to stay inside R2's 2 KiB limit. An object saved before the list existed has no metadata, so the list shows it as unnamed, with its upload time.
 
@@ -336,7 +346,7 @@ There is no database, and D1 isn't needed: the list is one R2 `list` call with c
 
 **Uploads** are the photos behind pictures and rugs. The browser shrinks each to 1600 px on its longest side and re-encodes it as WebP before upload, so the 2 MiB cap is a ceiling. Only items refer to an upload, and nothing deletes one yet.
 
-**Assets** are checked in under `seed/` and uploaded key for key. A model is `assets/<id>/model.glb`, an image `assets/<id>/image.webp`, and either has `assets/<id>/thumbnail.webp`. Materials are Poly Haven 1K maps converted to WebP by `scripts/fetch-materials.mjs`, and the HDRI is Poly Haven's 1K `.hdr`, fetched as it is by `scripts/fetch-environment.mjs`. Asset paths in the catalog are relative to the API root (`assets/…`), and the client prefixes `/api/`.
+**Public assets** are checked in under `seed/` and uploaded key for key. Private ones never touch `seed/` (see the import pipeline below). A model is `assets/<id>/model.glb`, an image `assets/<id>/image.webp`, and either has `assets/<id>/thumbnail.webp`. Materials are Poly Haven 1K maps converted to WebP by `scripts/fetch-materials.mjs`, and the HDRI is Poly Haven's 1K `.hdr`, fetched as it is by `scripts/fetch-environment.mjs`. Asset paths in the catalog are relative to the API root (`assets/…`), and the client prefixes `/api/`.
 
 **The import pipeline** is `scripts/import-asset.ts` over `scripts/import/`:
 
@@ -352,9 +362,10 @@ flowchart LR
 
 - **meshopt and WebP, not Draco and KTX2:** three.js decodes both with no extra fetch, while drei's Draco default loads its decoder from a third-party CDN.
 - **`seed/catalog.json` is the catalog's source of truth,** and the bucket's `catalog.json` is a copy of it. An import reads the local file, so it must run from an up-to-date checkout, and `seed/` must be committed afterward.
+- **`--private` writes the personal catalog instead,** and never `seed/`. R2 is that catalog's only home, so the import first downloads `private/catalog.json` into a temporary folder laid out like the bucket, adds the entry, and uploads the files and then the catalog, as a public import does. Only Wrangler's "key does not exist" counts as an empty catalog: any other failure to read it stops the import, which would otherwise overwrite the catalog with one entry. It refuses `--id`, `--replace` and a `--seed-dir` inside `seed/`.
 - **`scripts/seed-models.ts`** rebuilds the seed furniture from Poly Haven through the same pipeline, checking each file's md5 and each model's height against the published size. It doesn't upload.
 
-**The catalog is read two ways.** The catalog panel fetches furniture at runtime through `GET /api/catalog` (`src/api/catalog.ts`), so an import needs no deploy. Materials and the environment stay compiled in: `src/model/materials.ts` and `src/model/environment.ts` import `seed/catalog.json` at build time, because surfaces look materials up synchronously and imports add neither. Seeding doesn't run on deploy: when `seed/` changes other than by an import, run `npm run seed:remote` before merging. Until it runs, production's new material entries point at objects that don't exist and surfaces using them stay a plain color, a new HDRI falls back to built-in light, and the panel and lamps know only what the bucket's `catalog.json` lists.
+**The catalog is read two ways.** The catalog panel fetches furniture at runtime through `GET /api/catalog` (`src/api/catalog.ts`), so an import needs no deploy. The editor also fetches `GET /api/private/catalog` (`useCatalog({ withPrivate: true })`) and lists those assets after the public ones, marked Private. The public catalog decides whether the panel loads: if the personal one fails, the panel says so and lists the rest. The viewer never asks for it. Materials and the environment stay compiled in: `src/model/materials.ts` and `src/model/environment.ts` import `seed/catalog.json` at build time, because surfaces look materials up synchronously and imports add neither. Seeding doesn't run on deploy: when `seed/` changes other than by an import, run `npm run seed:remote` before merging. Until it runs, production's new material entries point at objects that don't exist and surfaces using them stay a plain color, a new HDRI falls back to built-in light, and the panel and lamps know only what the bucket's `catalog.json` lists.
 
 ## Cloudflare free-tier limits
 
@@ -388,6 +399,7 @@ Sources: [Pages limits](https://developers.cloudflare.com/pages/platform/limits/
 | Functions | Vitest (`tests/functions/`) | Handlers called directly |
 | End to end | Playwright (`e2e/`) | A fresh build on the real Pages runtime (workerd) with local R2. Every seed model is loaded in the browser and measured, and one test runs the real import command |
 
+- **A private asset in e2e:** `scripts/e2e-server.mjs` puts one in local R2 after seeding, as `import-asset --private` would leave it: the entry in `e2e/fixtures/private-catalog.json`, with a seed model's files under its private key. Tests that count the panel's tiles count public ones.
 - **Access in e2e:** `playwright.config.ts` generates a throwaway RSA key each run, and `e2e/access-token.ts` signs short-lived tokens with it, so the real verification path is exercised.
 - **Browsers:** a desktop project runs every spec and a phone project runs the chair, share and polish specs. `capture-furnished.spec.ts` skips itself unless asked to measure or take pictures. Both use software WebGL, so no GPU is needed: SwiftShader by default, or the ANGLE backend named by `E2E_ANGLE`.
 - **CI** (`.github/workflows/ci.yml`) runs build, unit tests and e2e on pushes to `main` and on pull requests. When a change touches only documentation (root `*.md`, `docs/**`, `LICENSE`, and the PR and issue templates), its `check` job still runs, because it is a required status, but skips those steps and passes. Files that tests read, such as `seed/`, stay outside that list. Its e2e step installs Mesa and sets `E2E_ANGLE=gl-egl` to render with llvmpipe, because SwiftShader with two workers overloads the runner until tests time out. A separate workflow (`.github/workflows/pr-description.yml`) fails a PR whose description has no `System design:` line.
@@ -416,15 +428,17 @@ Sources: [Pages limits](https://developers.cloudflare.com/pages/platform/limits/
 | Lamps have no on/off or dimmer, and only the first few give light | Keeps the Design schema unchanged | Not planned yet |
 | A ceiling item placed by an older build stays on the floor until the room is next edited | Older placement put it there; `followWalls` corrects it on the next room edit, but a snapshot stays as it was | Not planned |
 | A phone's saved image uses its smaller model textures | Export from a desktop for the best picture | Not planned |
+| The personal catalog's only copy is in R2, with no backup and no command to remove or rename an entry | Few private assets so far, and the owner keeps the source files | Not planned yet |
+| A share link shows each private item as a plain box, with no hint of what it is | The owner decided that models made from a shop's images stay out of share links at first | Owner's decision, after a look at copyright |
 
 ## Planned architecture
 
 **Not built.** These notes record what the current architecture implies for coming features, which are tracked in [GitHub Issues](https://github.com/davidopluslau/whimsy-forge/issues) and [feature briefs](features/). They aren't decisions: the agent building the feature decides, then moves the result into the as-built sections above.
 
-- **Asset capture** ([brief](features/asset-capture.md), a draft): turns product pictures and photos into catalog assets. It would end in the existing import pipeline, with generation outside Functions. It collides with three things above: provenance requires an http(s) `sourceUrl`, fitting is uniform along one axis, and everything imported is publicly readable. The owner has decided that personal assets go in an R2-only catalog, out of git, under unguessable IDs, and that models made from a shop's images stay out of share links at first. The details aren't designed yet.
+- **Asset capture** ([brief](features/asset-capture.md), a draft): turns product pictures and photos into catalog assets. It would end in the existing import pipeline, with generation outside Functions, and import its results with `--private` into the personal catalog, which is built. It still collides with two things above: provenance requires an http(s) `sourceUrl`, and fitting is uniform along one axis.
 
 ## Open design questions
 
 Gaps between what's planned and the architecture as built. Remove each one when it is decided, and record the outcome above.
 
-- How does the R2-only personal catalog work: how does the editor read it, and what does a share link's viewer load in place of a private asset? See the [asset capture brief](features/asset-capture.md#decisions).
+None open.

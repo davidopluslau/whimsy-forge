@@ -15,6 +15,17 @@ function run(args) {
 run([join(root, 'node_modules', 'vite', 'bin', 'vite.js'), 'build']);
 run([join(root, 'scripts', 'seed-r2.mjs'), '--local', ...persist]);
 
+// A personal catalog with one asset, as `import-asset --private` would leave it. Its files are a copy of a
+// seed model, so nothing private or binary needs checking in.
+const PRIVATE_ID = 'private-E2eFixturePrivateTbl01';
+for (const [key, file, contentType] of [
+  [`private/assets/${PRIVATE_ID}/model.glb`, join(root, 'seed', 'assets', 'side-table-01', 'model.glb'), 'model/gltf-binary'],
+  [`private/assets/${PRIVATE_ID}/thumbnail.webp`, join(root, 'seed', 'assets', 'side-table-01', 'thumbnail.webp'), 'image/webp'],
+  ['private/catalog.json', join(root, 'e2e', 'fixtures', 'private-catalog.json'), 'application/json'],
+]) {
+  run([wrangler, 'r2', 'object', 'put', `whimsy-forge/${key}`, '--file', file, '--content-type', contentType, '--local', ...persist]);
+}
+
 const server = spawn(
   process.execPath,
   [

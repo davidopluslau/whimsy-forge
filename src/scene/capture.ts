@@ -1,4 +1,4 @@
-import { PerspectiveCamera, Vector2, Vector3, type Camera, type Scene, type WebGLRenderer } from 'three';
+import { PerspectiveCamera, Vector2, Vector3, type Camera, type Object3D, type Scene, type WebGLRenderer } from 'three';
 import type { CameraView } from './cameraViews';
 
 /** A saved image is at least this wide or tall, however small the pane it came from. */
@@ -13,7 +13,47 @@ const LINK_PREVIEW = { width: 1200, height: 630, type: 'image/jpeg', quality: 0.
 /** Set this in `userData` on what must not appear in a saved image, such as gizmos. */
 export const CAPTURE_HIDDEN = { captureHidden: true };
 
-export type CaptureOptions = { width: number; height: number; view: CameraView };
+/**
+ * Set this in `userData` on what shows a private asset: its model and its lamp's light. A picture for anyone
+ * else, such as a share's link preview, leaves it out and shows what's marked `PRIVATE_STAND_IN_MARK`.
+ */
+export const PRIVATE_CONTENT = { privateContent: true };
+/** Set this in `userData` on a hidden box that takes a private asset's place in a picture for someone else. */
+export const PRIVATE_STAND_IN_MARK = { privateStandIn: true };
+
+export type CaptureOptions = {
+  width: number;
+  height: number;
+  view: CameraView;
+  /** Draw private assets as the viewer of a share link sees them: as boxes, with no light or shadow of their own. */
+  redactPrivate?: boolean;
+};
+
+/**
+ * Hides what a saved picture leaves out and, with `redactPrivate`, swaps each private asset for its stand-in.
+ * `restore` puts every object back as it was. `redacted` says whether anything private was changed.
+ */
+export function prepareForCapture(scene: Object3D, redactPrivate: boolean): { restore: () => void; redacted: boolean } {
+  const changed: { object: Object3D; visible: boolean }[] = [];
+  let redacted = false;
+  const show = (object: Object3D, visible: boolean, isPrivate: boolean) => {
+    if (object.visible === visible) return;
+    changed.push({ object, visible: object.visible });
+    object.visible = visible;
+    redacted ||= isPrivate;
+  };
+  scene.traverse((object) => {
+    if (object.userData.captureHidden) show(object, false, false);
+    if (redactPrivate && object.userData.privateContent) show(object, false, true);
+    if (redactPrivate && object.userData.privateStandIn) show(object, true, true);
+  });
+  return {
+    redacted,
+    restore: () => {
+      for (const { object, visible } of changed) object.visible = visible;
+    },
+  };
+}
 
 /**
  * Draws the scene once into a new 2D canvas, at any size, without changing what's on screen. All of it
@@ -21,25 +61,22 @@ export type CaptureOptions = { width: number; height: number; view: CameraView }
  * between the render and the copy. That's why the renderer doesn't need `preserveDrawingBuffer`, which
  * would slow every frame on a phone. It also works while the pane is hidden, since the buffer is resized.
  */
-export function renderToCanvas(gl: WebGLRenderer, scene: Scene, camera: Camera, { width, height, view }: CaptureOptions): HTMLCanvasElement {
+export function renderToCanvas(gl: WebGLRenderer, scene: Scene, camera: Camera, { width, height, view, redactPrivate = false }: CaptureOptions): HTMLCanvasElement {
   const shot = new PerspectiveCamera((camera as PerspectiveCamera).fov, width / height, (camera as PerspectiveCamera).near, (camera as PerspectiveCamera).far);
   shot.position.set(...view.position);
   shot.lookAt(new Vector3(...view.target));
   shot.updateMatrixWorld();
 
-  const hidden: { visible: boolean }[] = [];
-  scene.traverse((object) => {
-    if (object.userData.captureHidden && object.visible) {
-      object.visible = false;
-      hidden.push(object);
-    }
-  });
+  const { restore, redacted } = prepareForCapture(scene, redactPrivate);
+  // The shadow map is drawn only when something changes, so a hidden model would still cast its shadow.
+  const redrawShadows = redacted;
 
   const size = gl.getSize(new Vector2());
   const pixelRatio = gl.getPixelRatio();
   try {
     gl.setPixelRatio(1);
     gl.setSize(width, height, false);
+    if (redrawShadows) gl.shadowMap.needsUpdate = true;
     gl.render(scene, shot);
     const canvas = document.createElement('canvas');
     canvas.width = width;
@@ -47,7 +84,8 @@ export function renderToCanvas(gl: WebGLRenderer, scene: Scene, camera: Camera, 
     canvas.getContext('2d')!.drawImage(gl.domElement, 0, 0);
     return canvas;
   } finally {
-    for (const object of hidden) object.visible = true;
+    restore();
+    if (redrawShadows) gl.shadowMap.needsUpdate = true;
     gl.setPixelRatio(pixelRatio);
     gl.setSize(size.x, size.y, false);
     // `setSize` rounds a fractional pane width but the scene's normal viewport is rounded down, which
@@ -71,7 +109,7 @@ export type SceneCapture = {
   /** The shape of the 3D pane and its size in buffer pixels, or null while it is hidden. */
   paneSize: () => { width: number; height: number } | null;
   /** Renders the current view, or a framed one if the pane is hidden. */
-  render: (width: number, height: number) => HTMLCanvasElement;
+  render: (width: number, height: number, options?: Pick<CaptureOptions, 'redactPrivate'>) => HTMLCanvasElement;
 };
 
 /** A PNG of what the 3D pane shows. A hidden pane gives a framed view of the room. */
@@ -85,9 +123,12 @@ export function viewImage(capture: SceneCapture): Promise<Blob> {
   return canvasBlob(capture.render(width, height), 'image/png');
 }
 
-/** The image shown when a share link is posted in a messaging app. */
+/**
+ * The image shown when a share link is posted in a messaging app. Anyone can fetch it, so private assets are
+ * drawn as the link's viewer sees them.
+ */
 export function linkPreviewImage(capture: SceneCapture): Promise<Blob> {
-  return canvasBlob(capture.render(LINK_PREVIEW.width, LINK_PREVIEW.height), LINK_PREVIEW.type, LINK_PREVIEW.quality);
+  return canvasBlob(capture.render(LINK_PREVIEW.width, LINK_PREVIEW.height, { redactPrivate: true }), LINK_PREVIEW.type, LINK_PREVIEW.quality);
 }
 
 /** A file name from a design's name, safe on every system. */

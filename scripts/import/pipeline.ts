@@ -1,8 +1,21 @@
-// Turns one source file into finished files under seed/assets and an entry in seed/catalog.json.
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+// Turns one source file into finished files under seed/assets and an entry in seed/catalog.json. A private
+// import writes the personal catalog's layout instead, into a working folder that is never seed/.
+import { randomBytes } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join } from 'node:path';
 import sharp from 'sharp';
-import { type CatalogAsset, type Category, isCatalogAsset, isHttpUrl, type LampLight, type Mount } from '../../src/model/catalog.ts';
+import {
+  type CatalogAsset,
+  type CatalogScope,
+  type Category,
+  isCatalogAsset,
+  isHttpUrl,
+  type LampLight,
+  type Mount,
+  PRIVATE_ASSET_PREFIX,
+  PRIVATE_ASSET_ROOT,
+  PRIVATE_CATALOG_KEY,
+} from '../../src/model/catalog.ts';
 import { type ModelOptions, processModel } from './model.ts';
 import { THUMBNAIL_SIZE, type ThumbnailRenderer } from './thumbnail.ts';
 
@@ -30,6 +43,8 @@ export type ImportRequest = {
   imageWidth?: number;
   /** For a model that gives light. */
   light?: LampLight;
+  /** `private` puts the asset in the personal catalog, under a new unguessable id. Public by default. */
+  scope?: CatalogScope;
 };
 
 export type ImportResult = {
@@ -48,8 +63,19 @@ export function slugify(text: string): string {
 
 const titleFromFile = (slug: string) => slug.replaceAll('-', ' ').replace(/^./, (first) => first.toUpperCase());
 
-export function readCatalog(seedDir: string): unknown[] {
-  return JSON.parse(readFileSync(join(seedDir, 'catalog.json'), 'utf8')) as unknown[];
+/** The catalog's key in the bucket, which is also its path in the folder an import writes to. */
+export const catalogKey = (scope: CatalogScope) => (scope === 'private' ? PRIVATE_CATALOG_KEY : 'catalog.json');
+
+/** A new private asset id: the prefix and 128 random bits, as design ids are. */
+export const privateAssetId = () => `${PRIVATE_ASSET_PREFIX}${randomBytes(16).toString('base64url')}`;
+
+/** The catalog in `dir`. A personal catalog that doesn't exist yet is empty; a missing seed catalog is an error. */
+export function readCatalog(dir: string, scope: CatalogScope = 'public'): unknown[] {
+  const path = join(dir, catalogKey(scope));
+  if (scope === 'private' && !existsSync(path)) return [];
+  const catalog = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+  if (!Array.isArray(catalog)) throw new Error(`${path} isn't a list of assets.`);
+  return catalog;
 }
 
 /** Two-space JSON, with each number array on one line so entries stay readable in a diff. */
@@ -94,11 +120,21 @@ export async function importAsset(request: ImportRequest, seedDir: string, thumb
     throw new Error(`Can't import ${extension || 'that file'}: expected ${[...MODEL_EXTENSIONS, ...IMAGE_EXTENSIONS].join(', ')}.`);
   }
 
+  const scope = request.scope ?? 'public';
   const fileSlug = slugify(request.file.split(/[\\/]/).pop()!.slice(0, -extension.length));
-  const id = request.id ?? (request.name ? slugify(request.name) : fileSlug);
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) throw new Error(`"${id}" can't be an asset id: use lowercase letters, digits and dashes.`);
+  let id: string;
+  if (scope === 'private') {
+    // The id is the only thing a design or a stray link reveals, so it's random, never from the name.
+    if (request.id !== undefined || request.replace) throw new Error('A private asset always gets a new random id: leave out --id and --replace.');
+    id = privateAssetId();
+  } else {
+    id = request.id ?? (request.name ? slugify(request.name) : fileSlug);
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) throw new Error(`"${id}" can't be an asset id: use lowercase letters, digits and dashes.`);
+    if (id.startsWith(PRIVATE_ASSET_PREFIX)) throw new Error(`"${id}" can't be a public asset id: "${PRIVATE_ASSET_PREFIX}" marks private assets. Pass --id to choose another.`);
+  }
+  const folder = scope === 'private' ? `${PRIVATE_ASSET_ROOT}${id}` : `assets/${id}`;
 
-  const catalog = readCatalog(seedDir);
+  const catalog = readCatalog(seedDir, scope);
   if (!request.replace && catalog.some((entry) => (entry as { id?: unknown }).id === id)) {
     throw new Error(`The catalog already has "${id}". Pass --replace to overwrite it, or --id to choose another id.`);
   }
@@ -130,14 +166,14 @@ export async function importAsset(request: ImportRequest, seedDir: string, thumb
     category: request.category,
     tags: request.tags ?? [],
     mount: request.mount ?? (kind === 'picture' ? 'wall' : 'floor'),
-    url: `assets/${id}/${mainFile}`,
-    thumbnailUrl: `assets/${id}/thumbnail.webp`,
+    url: `${folder}/${mainFile}`,
+    thumbnailUrl: `${folder}/thumbnail.webp`,
     dimensions,
     license: request.license,
     sourceUrl: request.sourceUrl,
     ...(request.light ? { light: request.light } : {}),
   };
-  if (!isCatalogAsset(asset)) throw new Error(`The entry for "${id}" isn't valid: ${JSON.stringify(asset)}`);
+  if (!isCatalogAsset(asset, scope)) throw new Error(`The entry for "${id}" isn't valid: ${JSON.stringify(asset)}`);
 
   const outputs = [
     { key: asset.url, bytes: main },
@@ -150,10 +186,12 @@ export async function importAsset(request: ImportRequest, seedDir: string, thumb
     return { path, key };
   });
 
-  const catalogPath = join(seedDir, 'catalog.json');
+  const key = catalogKey(scope);
+  const catalogPath = join(seedDir, key);
+  mkdirSync(dirname(catalogPath), { recursive: true });
   writeFileSync(catalogPath, formatCatalog(upsertCatalog(catalog, asset)));
   // Last, so a failed upload never leaves the live catalog pointing at missing objects.
-  files.push({ path: catalogPath, key: 'catalog.json' });
+  files.push({ path: catalogPath, key });
 
   return { asset, files };
 }

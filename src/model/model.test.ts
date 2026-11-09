@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { cleanDesignName, copiedDesign, createEmptyDesign, MAX_DESIGN_NAME_LENGTH, renamedDesign, snapshotOf } from './design';
+import { PRIVATE_STAND_IN } from './catalog';
+import { cleanDesignName, copiedDesign, createEmptyDesign, type Item, MAX_DESIGN_NAME_LENGTH, privateItemCount, renamedDesign, snapshotOf } from './design';
 import { generateId, isDesignId } from './ids';
 
 describe('snapshotOf', () => {
@@ -28,6 +29,25 @@ describe('snapshotOf', () => {
     expect(design).toEqual(before);
     expect(snapshot.room.walls).not.toBe(design.room.walls);
     expect(snapshot.room.walls[0]).not.toBe(design.room.walls[0]);
+  });
+
+  describe('with private items', () => {
+    const PRIVATE_ID = 'private-AbCdEfGhIjKlMnOpQrSt_-';
+    const item = (id: string, assetId: string): Item => ({ id, assetId, position: [1, 0, 2], rotationY: 0.5, size: [2, 0.8, 0.9], mount: 'floor' });
+    const furnished = { ...design, items: [item('a', PRIVATE_ID), item('b', 'sofa'), item('c', 'private-oddly-named')] };
+
+    it("never carries a private asset's id, and keeps each item's place and size", () => {
+      const snapshot = snapshotOf(furnished, SNAPSHOT_ID, view);
+      expect(JSON.stringify(snapshot)).not.toContain('private-');
+      expect(snapshot.items).toEqual([{ ...item('a', PRIVATE_STAND_IN) }, item('b', 'sofa'), item('c', PRIVATE_STAND_IN)]);
+      expect(furnished.items[0]!.assetId).toBe(PRIVATE_ID);
+    });
+
+    it('counts private items in the design and their stand-ins in the snapshot alike', () => {
+      expect(privateItemCount(furnished.items)).toBe(2);
+      expect(privateItemCount(snapshotOf(furnished, SNAPSHOT_ID, view).items)).toBe(2);
+      expect(privateItemCount(design.items)).toBe(0);
+    });
   });
 });
 

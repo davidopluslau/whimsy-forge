@@ -76,7 +76,7 @@ export default function EditorPage({ saver }: { saver: Autosaver }) {
   const canUndo = useDesignStore((state) => state.past.length > 0);
   const canRedo = useDesignStore((state) => state.future.length > 0);
 
-  const { catalog, retry } = useCatalog();
+  const { catalog, retry } = useCatalog({ withPrivate: true });
   const assets = useMemo(() => (catalog.status === 'ready' ? catalog.assets : []), [catalog]);
   const catalogById = useMemo(() => new Map<string, CatalogAsset>(assets.map((asset) => [asset.id, asset])), [assets]);
 

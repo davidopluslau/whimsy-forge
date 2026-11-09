@@ -3,8 +3,10 @@ import { useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useState } from 'react';
 import { AdditiveBlending, CanvasTexture, EquirectangularReflectionMapping, Object3D, SRGBColorSpace, type DataTexture } from 'three';
 import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js';
+import { isPrivateAssetId } from '../model/catalog';
 import { ENVIRONMENT } from '../model/environment';
 import type { PlacedLight } from '../model/items';
+import { PRIVATE_CONTENT } from './capture';
 import type { RoomGeometry } from './roomGeometry';
 
 /** How bright the HDRI is, and how strong the sun, in the balance that makes interiors read well. */
@@ -167,7 +169,7 @@ export function LampLights({ lights }: { lights: readonly PlacedLight[] }) {
   return (
     <>
       {lights.map((light) => (
-        <group key={light.itemId} position={light.position}>
+        <group key={light.itemId} position={light.position} {...(isPrivateAssetId(light.assetId) ? { userData: PRIVATE_CONTENT } : {})}>
           <pointLight color={light.color} intensity={light.intensity} distance={light.distance} decay={2} />
           <sprite scale={[GLOW_SIZE, GLOW_SIZE, 1]}>
             <spriteMaterial map={glow} color={light.color} opacity={GLOW_OPACITY} blending={AdditiveBlending} depthWrite={false} transparent toneMapped={false} />

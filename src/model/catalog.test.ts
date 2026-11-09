@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type CatalogAsset, categoriesIn, filterCatalog, isCatalogAsset, parseCatalog } from './catalog';
+import { type CatalogAsset, categoriesIn, filterCatalog, isCatalogAsset, isPrivateAssetId, parseCatalog, PRIVATE_STAND_IN } from './catalog';
 
 function asset(overrides: Partial<CatalogAsset> = {}): CatalogAsset {
   return {
@@ -46,6 +46,43 @@ describe('parseCatalog', () => {
 
   it('treats anything but a list as empty', () => {
     expect(parseCatalog({ assets: [] })).toEqual([]);
+  });
+});
+
+describe('the personal catalog', () => {
+  const ID = 'private-AbCdEfGhIjKlMnOpQrSt_-';
+  const mine = asset({ id: ID, name: 'Shop sofa', url: `private/assets/${ID}/model.glb`, thumbnailUrl: `private/assets/${ID}/thumbnail.webp` });
+
+  it('names a private asset by its prefix alone', () => {
+    expect(isPrivateAssetId(ID)).toBe(true);
+    expect(isPrivateAssetId('private-anything')).toBe(true);
+    expect(isPrivateAssetId(PRIVATE_STAND_IN)).toBe(false);
+    expect(isPrivateAssetId('sofa')).toBe(false);
+  });
+
+  it('accepts a private entry only in the private scope', () => {
+    expect(isCatalogAsset(mine, 'private')).toBe(true);
+    expect(isCatalogAsset(mine)).toBe(false);
+    expect(parseCatalog([mine, asset()])).toEqual([asset()]);
+    expect(parseCatalog([mine, asset()], 'private')).toEqual([mine]);
+  });
+
+  it.each([
+    ['a public asset in the personal catalog', asset()],
+    ['a guessable private id', { ...mine, id: 'private-sofa', url: 'private/assets/private-sofa/model.glb', thumbnailUrl: 'private/assets/private-sofa/thumbnail.webp' }],
+    ['files under the public prefix', { ...mine, url: `assets/${ID}/model.glb` }],
+    ["another asset's folder", { ...mine, thumbnailUrl: 'private/assets/private-ZZZZZZZZZZZZZZZZZZZZZZ/thumbnail.webp' }],
+    ['a path that climbs out', { ...mine, url: `private/assets/${ID}/../../catalog.json` }],
+  ])('rejects %s', (_, entry) => {
+    expect(isCatalogAsset(entry, 'private')).toBe(false);
+  });
+
+  it('keeps a public entry with a private-looking id out of the public catalog', () => {
+    expect(isCatalogAsset(asset({ id: 'private-desk' }))).toBe(false);
+  });
+
+  it('finds private assets by the word "private"', () => {
+    expect(filterCatalog([mine, asset()], { query: 'private', category: null })).toEqual([mine]);
   });
 });
 

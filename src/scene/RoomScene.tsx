@@ -171,10 +171,10 @@ function CaptureHandle({ target, bounds, wallHeight }: { target: MutableRefObjec
     target.current = {
       paneSize,
       currentView,
-      render: (width, height) => {
+      render: (width, height, options) => {
         const { gl, scene, camera } = get();
         const view = currentView() ?? framedView(room.current.bounds, room.current.wallHeight, width / height, OVERVIEW_POSITION);
-        return renderToCanvas(gl, scene, camera, { width, height, view });
+        return renderToCanvas(gl, scene, camera, { width, height, view, ...options });
       },
     };
     return () => {

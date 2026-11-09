@@ -1,11 +1,14 @@
 // Imports one model or image into the catalog: normalizes it to meters with its pivot at bottom
 // center, compresses it, renders a thumbnail, uploads it to R2 and appends it to seed/catalog.json.
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { CATEGORIES, type Category, type Mount, MOUNTS } from '../src/model/catalog.ts';
+import { CATEGORIES, type Category, type Mount, MOUNTS, PRIVATE_CATALOG_KEY } from '../src/model/catalog.ts';
 import type { ModelOptions } from './import/model.ts';
 import { importAsset, MODEL_EXTENSIONS } from './import/pipeline.ts';
-import { upload } from './import/r2.ts';
+import { download, upload } from './import/r2.ts';
 import { createThumbnailRenderer } from './import/thumbnail.ts';
 
 const USAGE = `Usage: npm run import-asset -- <file> --category <category> --license <license> --source <url> [options]
@@ -21,8 +24,10 @@ Options:
   --tags <a,b>        extra search words
   --mount <where>     ${MOUNTS.join(', ')} (default: floor, or wall for a picture)
   --replace           overwrite an asset that has this id
+  --private           put it in the personal catalog, which only you can see: it gets a random id, goes
+                      only to R2 (never to seed/ or git), and share links show a plain box in its place
   --local             upload to the local R2 used by "npm run dev:pages" instead of the real bucket
-  --no-upload         only write to seed/
+  --no-upload         only write to seed/, or for --private to --seed-dir
 
 Models are assumed to be in meters, as glTF specifies. To correct one, pass either:
   --scale <factor>    for example 0.01 for centimeters
@@ -57,6 +62,7 @@ const options = {
   tags: { type: 'string' },
   mount: { type: 'string' },
   replace: { type: 'boolean' },
+  private: { type: 'boolean' },
   local: { type: 'boolean' },
   'no-upload': { type: 'boolean' },
   scale: { type: 'string' },
@@ -103,7 +109,31 @@ if (width) fit = { axis: 'width', meters: width };
 if (height) fit = { axis: 'height', meters: height };
 if (depth) fit = { axis: 'depth', meters: depth };
 
-const seedDir = values['seed-dir'] ?? fileURLToPath(new URL('../seed', import.meta.url));
+const isPrivate = values.private === true;
+const target = values.local ? 'local' : 'remote';
+const repoSeed = fileURLToPath(new URL('../seed', import.meta.url));
+if (isPrivate && (values.id !== undefined || values.replace)) fail('A private asset always gets a new random id: leave out --id and --replace.');
+if (isPrivate && values['no-upload'] && !values['seed-dir']) fail('--private --no-upload needs --seed-dir: a private asset is never written to seed/.');
+const insideSeed = (dir: string) => {
+  const path = relative(repoSeed, resolve(dir));
+  return path === '' || (!path.startsWith('..') && !isAbsolute(path));
+};
+if (isPrivate && values['seed-dir'] && insideSeed(values['seed-dir'])) fail('A private asset is never written to seed/: choose a --seed-dir outside it.');
+
+// A private import works in a folder laid out like the bucket, outside the repository, and starts from the
+// personal catalog as R2 has it, because R2 is the only place that catalog lives.
+const seedDir = values['seed-dir'] ?? (isPrivate ? mkdtempSync(join(tmpdir(), 'whimsy-private-')) : repoSeed);
+const ownsSeedDir = isPrivate && !values['seed-dir'];
+let uploaded = false;
+if (isPrivate && !values['no-upload']) {
+  const catalogPath = join(seedDir, PRIVATE_CATALOG_KEY);
+  mkdirSync(dirname(catalogPath), { recursive: true });
+  try {
+    if (!download(PRIVATE_CATALOG_KEY, catalogPath, target)) console.log('There is no personal catalog yet: this import starts one.');
+  } catch (error) {
+    fail((error as Error).message);
+  }
+}
 const thumbnails = isModel ? await createThumbnailRenderer() : null;
 
 try {
@@ -118,6 +148,7 @@ try {
       license: values.license,
       sourceUrl: values.source,
       replace: values.replace,
+      scope: isPrivate ? 'private' : 'public',
       imageWidth: width,
       model: {
         fit,
@@ -134,16 +165,29 @@ try {
   const [x, y, z] = asset.dimensions;
   console.log(`Imported "${asset.name}" as ${asset.id}: ${x} x ${y} x ${z} m (width, height, depth).`);
 
-  if (values['no-upload']) {
-    console.log('Skipped the upload. Run "npm run seed:remote" to upload everything in seed/.');
+  if (isPrivate) {
+    if (values['no-upload']) {
+      console.log(`Skipped the upload. The files are in ${seedDir}, laid out as the bucket keys them.`);
+    } else {
+      upload(files, target, `Nothing in the personal catalog points at it yet, so run the import again. Its files are in ${seedDir}.`);
+      uploaded = true;
+      console.log(`Uploaded to ${target === 'local' ? 'local' : 'the real'} R2. It is in your catalog panel now, marked Private.`);
+    }
+    console.log('Nothing was written to seed/: the personal catalog lives only in R2.');
   } else {
-    upload(files, values.local ? 'local' : 'remote');
-    console.log(`Uploaded to ${values.local ? 'local' : 'the real'} R2. It is in the catalog panel now.`);
+    if (values['no-upload']) {
+      console.log('Skipped the upload. Run "npm run seed:remote" to upload everything in seed/.');
+    } else {
+      upload(files, target);
+      console.log(`Uploaded to ${target === 'local' ? 'local' : 'the real'} R2. It is in the catalog panel now.`);
+    }
+    console.log('Commit seed/ so the next import starts from this catalog.');
   }
-  console.log('Commit seed/ so the next import starts from this catalog.');
 } catch (error) {
   console.error((error as Error).message);
   process.exitCode = 1;
 } finally {
   await thumbnails?.close();
+  // A failed upload keeps the files, which the message above points to.
+  if (ownsSeedDir && uploaded) rmSync(seedDir, { recursive: true, force: true });
 }

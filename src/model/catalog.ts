@@ -59,6 +59,32 @@ export type CatalogAsset = {
   light?: LampLight;
 };
 
+/**
+ * A private asset lives in the personal catalog, which only the owner can read, and never in `seed/` or
+ * the public catalog. Its id is this prefix and 128 random bits, so it can't be guessed, and anything that
+ * sees only an id, such as a share, can tell that it's private without loading a catalog.
+ */
+export const PRIVATE_ASSET_PREFIX = 'private-';
+/** The form an import gives a private id: the prefix and 22 base64url characters. */
+export const PRIVATE_ASSET_ID = /^private-[A-Za-z0-9_-]{22}$/;
+
+/** Whether an asset id names a private asset. Errs toward yes: anything with the prefix counts. */
+export const isPrivateAssetId = (id: string): boolean => id.startsWith(PRIVATE_ASSET_PREFIX);
+
+/**
+ * What a share puts in place of a private asset's id. It names no asset, so the viewer draws a box of the
+ * item's size, as it does for any asset it can't find. It lacks the prefix's dash, so it isn't private itself.
+ */
+export const PRIVATE_STAND_IN = 'private';
+
+/** Where private assets' files live: under the owner-only route, not the public `assets/`. */
+export const PRIVATE_ASSET_ROOT = 'private/assets/';
+/** The personal catalog's key in the bucket. */
+export const PRIVATE_CATALOG_KEY = 'private/catalog.json';
+
+/** Which catalog an entry belongs to: the public one from `seed/`, or the owner's personal one in R2. */
+export type CatalogScope = 'public' | 'private';
+
 const isNonEmptyString = (value: unknown): value is string => typeof value === 'string' && value.trim() !== '';
 
 const includes = <T extends string>(values: readonly T[], value: unknown): value is T => values.includes(value as T);
@@ -73,8 +99,17 @@ export function isHttpUrl(value: unknown): value is string {
   }
 }
 
-/** A catalog path must stay under `assets/`, which is all the asset route serves. */
-const isAssetPath = (value: unknown) => isNonEmptyString(value) && value.startsWith('assets/') && !value.split('/').includes('..');
+/**
+ * A public catalog path must stay under `assets/`, which is all the public asset route serves. A private
+ * one must stay inside its own asset's folder under `private/assets/`, which only the owner can read.
+ */
+function isAssetPath(value: unknown, id: string, scope: CatalogScope): boolean {
+  if (!isNonEmptyString(value) || value.split('/').includes('..')) return false;
+  return scope === 'private' ? value.startsWith(`${PRIVATE_ASSET_ROOT}${id}/`) : value.startsWith('assets/');
+}
+
+/** A public entry may not have a private id, and a private one must have a well-formed one. */
+const isIdFor = (id: string, scope: CatalogScope) => (scope === 'private' ? PRIVATE_ASSET_ID.test(id) : !isPrivateAssetId(id));
 
 const isPositiveNumber = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value > 0;
 
@@ -92,19 +127,20 @@ function isLampLight(value: unknown): value is LampLight {
   );
 }
 
-export function isCatalogAsset(value: unknown): value is CatalogAsset {
+export function isCatalogAsset(value: unknown, scope: CatalogScope = 'public'): value is CatalogAsset {
   if (typeof value !== 'object' || value === null) return false;
   const asset = value as Partial<Record<keyof CatalogAsset, unknown>>;
   return (
     isNonEmptyString(asset.id) &&
+    isIdFor(asset.id, scope) &&
     isNonEmptyString(asset.name) &&
     includes(ASSET_KINDS, asset.kind) &&
     includes(CATEGORIES, asset.category) &&
     Array.isArray(asset.tags) &&
     asset.tags.every(isNonEmptyString) &&
     includes(MOUNTS, asset.mount) &&
-    isAssetPath(asset.url) &&
-    isAssetPath(asset.thumbnailUrl) &&
+    isAssetPath(asset.url, asset.id, scope) &&
+    isAssetPath(asset.thumbnailUrl, asset.id, scope) &&
     Array.isArray(asset.dimensions) &&
     asset.dimensions.length === 3 &&
     asset.dimensions.every((size) => typeof size === 'number' && Number.isFinite(size) && size >= 0) &&
@@ -116,10 +152,11 @@ export function isCatalogAsset(value: unknown): value is CatalogAsset {
 
 /**
  * The placeable assets in a catalog document. Materials are skipped, and so is anything malformed:
- * one bad entry, or one without a license and source, must not take the whole panel down.
+ * one bad entry, or one without a license and source, must not take the whole panel down. An entry that
+ * belongs to the other scope counts as malformed, so a private asset can never be listed as public.
  */
-export function parseCatalog(document: unknown): CatalogAsset[] {
-  return Array.isArray(document) ? document.filter(isCatalogAsset) : [];
+export function parseCatalog(document: unknown, scope: CatalogScope = 'public'): CatalogAsset[] {
+  return Array.isArray(document) ? document.filter((entry) => isCatalogAsset(entry, scope)) : [];
 }
 
 /** Categories that have at least one asset, in the catalog's display order. */
@@ -138,7 +175,7 @@ export function filterCatalog(assets: readonly CatalogAsset[], { query, category
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   return assets.filter((asset) => {
     if (category !== null && asset.category !== category) return false;
-    const haystack = [asset.name, asset.category, CATEGORY_LABELS[asset.category], ...asset.tags].join(' ').toLowerCase();
+    const haystack = [asset.name, asset.category, CATEGORY_LABELS[asset.category], ...asset.tags, ...(isPrivateAssetId(asset.id) ? ['private'] : [])].join(' ').toLowerCase();
     return words.every((word) => haystack.includes(word));
   });
 }
