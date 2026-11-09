@@ -48,8 +48,23 @@ RUNNERS = {
 }
 
 
+def hf_token():
+    """HF_TOKEN from the environment or from ../.env (outside the repo). Never printed."""
+    import os
+    if os.environ.get("HF_TOKEN"):
+        return os.environ["HF_TOKEN"]
+    env = ROOT / ".env"
+    if env.exists():
+        for line in env.read_text(encoding="utf-8").splitlines():
+            if line.strip().startswith("HF_TOKEN="):
+                return line.split("=", 1)[1].strip().strip('"')
+    return None
+
+
 def main():
     gen = sys.argv[1]
+    token = hf_token()
+    print("token:", "found" if token else "none (anonymous quota)")
     items = sys.argv[2:] or ITEMS
     space, fn = RUNNERS[gen]
     (OUT / gen).mkdir(parents=True, exist_ok=True)
@@ -59,7 +74,7 @@ def main():
                "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
         t0 = time.time()
         try:
-            client = Client(space, verbose=False)
+            client = Client(space, token=token, verbose=False)
             path = fn(client, img)
             src = Path(path if isinstance(path, str) else path["path"])
             dst = OUT / gen / f"{item}{src.suffix}"
@@ -72,6 +87,9 @@ def main():
         print(json.dumps(rec), flush=True)
         with open(OUT / "runs.jsonl", "a", encoding="utf-8") as f:
             f.write(json.dumps(rec) + "\n")
+        if "quota" in rec.get("error", "").lower():
+            print("Daily GPU quota used up; stopping. Rerun after it resets.")
+            break
 
 
 if __name__ == "__main__":
